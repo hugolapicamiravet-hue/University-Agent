@@ -60,6 +60,52 @@ class AcademicNotificationParserTests(unittest.TestCase):
         self.assertEqual(result.date_text, "20/09/2054 a las 10:00")
         self.assertEqual(result.event_at, datetime(2054, 9, 20, 10, 0))
 
+    def test_overdue_tasks_without_explicit_deadline_metadata(self):
+        cases = (
+            (
+                'Tasca vençuda:  Entrega ficticia 2. 15 sep. 2054',
+                'Entrega ficticia 2. 15 sep. 2054',
+            ),
+            (
+                'Tasca vençuda:  Entrega ficticia 1. 8 sep. 2054',
+                'Entrega ficticia 1. 8 sep. 2054',
+            ),
+            (
+                'Tasca vençuda:  Lliurament fictici de la 2ª convocatòria',
+                'Lliurament fictici de la 2ª convocatòria',
+            ),
+            (
+                'Tasca vençuda:  Lliurament fictici dels equips',
+                'Lliurament fictici dels equips',
+            ),
+        )
+
+        for subject, expected_title in cases:
+            with self.subTest(subject=subject):
+                result = parse_notification_subject(subject)
+                self.assertEqual(result.category, NotificationCategory.TASK_OVERDUE)
+                self.assertEqual(result.title, expected_title)
+                self.assertIsNone(result.date_text)
+                self.assertIsNone(result.event_at)
+                self.assertEqual(result.raw_subject, subject)
+
+    def test_generic_overdue_title_preserves_parentheses_and_colons(self):
+        subject = "Tasca vençuda: Vídeo (part 1): preparació"
+        result = parse_notification_subject(subject)
+
+        self.assertEqual(result.category, NotificationCategory.TASK_OVERDUE)
+        self.assertEqual(result.title, "Vídeo (part 1): preparació")
+        self.assertIsNone(result.date_text)
+        self.assertIsNone(result.event_at)
+
+    def test_nonanchored_overdue_variant_is_unknown(self):
+        subject = "Avís: Tasca vençuda: Activitat"
+
+        self.assertEqual(
+            parse_notification_subject(subject).category,
+            NotificationCategory.UNKNOWN,
+        )
+
     def test_activity_opens(self):
         subject = (
             'Opens on dilluns, 21 de setembre 2054, 12:00:\nTest de Práctica Ficticia 1.'
@@ -250,7 +296,8 @@ class AcademicNotificationParserTests(unittest.TestCase):
     def test_partial_templates_are_unknown(self):
         subjects = (
             "Venciment el dimarts, 22 de setembre 2054, 19:00:",
-            "Tasca vençuda: Activitat",
+            "Tasca vençuda:",
+            "Tasca vençuda:   ",
             "Heu realitzat la tramesa de la tasca",
             "Teniu tasques que vencen en set dies",
         )

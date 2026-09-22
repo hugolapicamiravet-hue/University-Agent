@@ -71,6 +71,9 @@ _TASK_OVERDUE_PATTERN = re.compile(
     r"^Tasca vençuda:\s+(?P<title>.+)\s+"
     r"\(fecha límite (?P<date>\d{1,2}/\d{1,2}/\d{4} a las \S+)\)$"
 )
+_TASK_OVERDUE_WITHOUT_DATE_PATTERN = re.compile(
+    r"^Tasca vençuda:\s+(?P<title>.+)$"
+)
 _TASK_SUBMISSION_PATTERN = re.compile(
     r"^Heu realitzat la tramesa de la tasca\s+(?P<title>.+)$"
 )
@@ -117,6 +120,14 @@ def parse_notification_subject(subject: str) -> ParsedNotification:
             title=match.group("title"),
             date_text=date_text,
             event_at=_parse_numeric_datetime(date_text),
+        )
+
+    match = _TASK_OVERDUE_WITHOUT_DATE_PATTERN.fullmatch(normalized_subject)
+    if match:
+        return ParsedNotification(
+            category=NotificationCategory.TASK_OVERDUE,
+            raw_subject=raw_subject,
+            title=match.group("title"),
         )
 
     match = _ACTIVITY_OPENS_PATTERN.fullmatch(normalized_subject)
