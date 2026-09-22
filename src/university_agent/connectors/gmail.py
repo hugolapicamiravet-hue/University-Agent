@@ -23,6 +23,15 @@ class GmailMessageSummary(TypedDict):
     date: str
 
 
+class GmailMessage(GmailMessageSummary):
+    """Gmail metadata and preview, without a decoded body."""
+
+    id: str
+    thread_id: str
+    recipients: str
+    snippet: str
+
+
 class GmailConnector:
     """Authenticate with Gmail and read recent message headers."""
 
@@ -30,10 +39,12 @@ class GmailConnector:
         self,
         credentials_path: str | Path = "secrets/credentials.json",
         token_path: str | Path = "secrets/token.json",
+        *,
+        service: Any | None = None,
     ) -> None:
         self.credentials_path = Path(credentials_path)
         self.token_path = Path(token_path)
-        self._service: Any | None = None
+        self._service: Any | None = service
 
     def authenticate(self) -> None:
         """Authenticate the user and prepare the read-only Gmail service."""
@@ -71,42 +82,62 @@ class GmailConnector:
 
     def fetch_recent_messages(self) -> list[GmailMessageSummary]:
         """Return sender, subject, and date for the 10 most recent messages."""
+        return [
+            {
+                "sender": message["sender"],
+                "subject": message["subject"],
+                "date": message["date"],
+            }
+            for message in self.search_messages(query="", max_results=10)
+        ]
+
+    def search_messages(self, query: str, max_results: int = 10) -> list[GmailMessage]:
+        """Read one page of Gmail search results using the native query syntax."""
+        if not 1 <= max_results <= 500:
+            raise ValueError("max_results must be between 1 and 500")
         if self._service is None:
             self.authenticate()
 
         response = (
             self._service.users()
             .messages()
-            .list(userId="me", maxResults=10)
+            .list(userId="me", q=query, maxResults=max_results)
             .execute()
         )
 
-        summaries: list[GmailMessageSummary] = []
-        for message in response.get("messages", []):
-            details = (
-                self._service.users()
-                .messages()
-                .get(
-                    userId="me",
-                    id=message["id"],
-                    format="metadata",
-                    metadataHeaders=["From", "Subject", "Date"],
-                )
-                .execute()
-            )
-            headers = {
-                header["name"].casefold(): header["value"]
-                for header in details.get("payload", {}).get("headers", [])
-            }
-            summaries.append(
-                {
-                    "sender": headers.get("from", ""),
-                    "subject": headers.get("subject", ""),
-                    "date": headers.get("date", ""),
-                }
-            )
+        return [self.get_message(message["id"]) for message in response.get("messages", [])]
 
-        return summaries
+    def get_message(self, message_id: str) -> GmailMessage:
+        """Read one message's metadata by its Gmail message ID."""
+        if not message_id.strip():
+            raise ValueError("message_id must not be empty")
+        if self._service is None:
+            self.authenticate()
+
+        details = (
+            self._service.users()
+            .messages()
+            .get(
+                userId="me",
+                id=message_id,
+                format="metadata",
+                metadataHeaders=["From", "To", "Subject", "Date"],
+            )
+            .execute()
+        )
+        headers = {
+            header["name"].casefold(): header["value"]
+            for header in details.get("payload", {}).get("headers", [])
+        }
+        return {
+            "id": details["id"],
+            "thread_id": details["threadId"],
+            "sender": headers.get("from", ""),
+            "recipients": headers.get("to", ""),
+            "subject": headers.get("subject", ""),
+            "date": headers.get("date", ""),
+            "snippet": details.get("snippet", ""),
+        }
 
     def _save_token(self, credentials: Credentials) -> None:
         """Store OAuth tokens locally with owner-only file permissions."""

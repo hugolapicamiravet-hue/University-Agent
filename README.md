@@ -10,9 +10,10 @@ The long-term goal is to integrate:
 
 ## Current scope
 
-This repository currently provides read-only Gmail access for a manual OAuth
-test. It does not implement an AI agent, Moodle access, persistence, email
-modification or sending, automatic classification, or a web interface.
+This repository currently provides read-only Gmail search and message metadata
+retrieval, with a manual OAuth demo. It does not implement an AI agent,
+Moodle access, persistence, email modification or sending, automatic
+classification, or a web interface.
 
 ## Requirements
 
@@ -53,6 +54,33 @@ printed with their sender, subject, and date.
 The entire `secrets/` directory is ignored by Git. Never commit credentials,
 OAuth client secrets, access tokens, refresh tokens, or other sensitive values.
 
+## Gmail connector
+
+`GmailConnector.search_messages(query, max_results=10)` forwards Gmail's native
+search syntax unchanged and returns one page of message metadata. For example,
+`connector.search_messages("from:fixture2@example.com", max_results=5)`.
+`max_results` must be between 1 and 500; pagination is not implemented.
+
+`GmailConnector.get_message(message_id)` retrieves metadata for one nonempty
+Gmail message ID. Both methods return dictionaries with `id`, `thread_id`,
+`sender`, `recipients`, `subject`, `date`, and `snippet` (search returns a list).
+Headers remain unparsed strings; missing headers and snippets become empty
+strings. Bodies and attachments are not retrieved or parsed.
+
+`fetch_recent_messages()` preserves its original list of sender, subject, and
+date dictionaries for up to 10 messages. API errors propagate to the caller.
+An optional `service=` constructor argument allows an injected Gmail service.
+
+## Unit tests
+
+Run the complete isolated suite from the repository root after installation:
+
+```bash
+python -m unittest discover -s tests -v
+```
+
+Tests use mocked services and require no Gmail account or OAuth credentials.
+
 ## Structure
 
 ```text
@@ -61,6 +89,8 @@ OAuth client secrets, access tokens, refresh tokens, or other sensitive values.
 ├── README.md
 ├── scripts/
 │   └── gmail_demo.py
+├── tests/
+│   └── test_gmail.py
 └── src/
     └── university_agent/
         ├── __init__.py
