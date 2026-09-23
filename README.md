@@ -10,8 +10,9 @@ read-only data access and deterministic processing before adding an AI layer.
 
 Today, the project reads Gmail metadata, parses supported academic email
 subjects, detects upcoming deadlines, and retrieves recent notices explicitly
-associated with a course code. It does not currently implement an AI agent or
-connect to Moodle.
+associated with a course code. It also discovers user-managed course directories
+and material files from an explicitly configured local filesystem root. It does
+not currently implement an AI agent or connect to Moodle.
 
 ## Implemented functionality
 
@@ -63,6 +64,17 @@ returns parsed notices containing an exact requested course code and academic
 year. It preserves Gmail provenance and the original Date header. Valid Date
 headers are ordered newest first; missing or unusable dates are placed last.
 
+### Local course materials
+
+`LocalMaterialsSource` discovers course directories and material files beneath
+an explicitly supplied filesystem root. The root is user-managed and must live
+outside this repository. Immediate visible directories are treated as course
+names, and visible, non-symlinked files are discovered recursively within an
+exact course directory.
+
+This capability returns filesystem metadata only. It does not open, extract,
+index, classify, or search document contents.
+
 ## Architecture
 
 ```text
@@ -78,12 +90,22 @@ academic_notifications.py    course_notices.py
     |                             |
     v                             v
 upcoming_deadlines.py        recent_course_notices.py
+
+External materials root
+    |
+    v
+LocalMaterialsSource
+    |
+    v
+LocalCourse / LocalMaterial metadata
 ```
 
 The connector owns communication with the external source, parsers perform
 deterministic extraction from subject text, and workflows compose those pieces
 into application operations. This keeps OAuth and Gmail access out of parsing
 logic and allows application behavior to be tested without a live mailbox.
+`LocalMaterialsSource` independently owns filesystem discovery and does not
+depend on Gmail.
 
 ## Requirements
 
@@ -169,6 +191,25 @@ notices = find_recent_course_notices(
 The course code above is illustrative. The operation performs exact code and
 academic-year matching; it does not resolve course names.
 
+### Local course materials
+
+Keep the materials root outside the repository and organize it with one
+user-managed directory per course:
+
+```python
+from pathlib import Path
+
+from university_agent.local_materials import LocalMaterialsSource
+
+source = LocalMaterialsSource(Path("/path/to/university-materials"))
+courses = source.list_courses()
+materials = source.list_materials("Curso Ficticio")
+```
+
+Discovery includes all visible regular files recursively, regardless of file
+extension. Hidden entries and symbolic links are ignored. File contents are not
+read.
+
 ### Manual OAuth demo
 
 Run:
@@ -189,7 +230,7 @@ Run the isolated unit-test suite from the repository root after installation:
 python -m unittest discover -s tests
 ```
 
-The current suite contains 69 tests. Pure parsers are tested directly, while
+The current suite contains 93 tests. Pure parsers are tested directly, while
 Gmail-dependent behavior uses injected or mocked services and connectors. The
 tests do not require live Gmail access, OAuth credentials, tokens, or network
 access.
@@ -208,6 +249,7 @@ access.
 │       ├── __init__.py
 │       ├── academic_notifications.py
 │       ├── course_notices.py
+│       ├── local_materials.py
 │       ├── recent_course_notices.py
 │       ├── upcoming_deadlines.py
 │       └── connectors/
@@ -217,6 +259,7 @@ access.
     ├── test_academic_notifications.py
     ├── test_course_notices.py
     ├── test_gmail.py
+    ├── test_local_materials.py
     ├── test_recent_course_notices.py
     └── test_upcoming_deadlines.py
 ```
@@ -234,7 +277,9 @@ access.
 
 ## Current limitations
 
-- Gmail is the only implemented external data source; Moodle is not integrated.
+- Gmail is the only implemented network data source; Moodle is not integrated.
+- Local material discovery does not read, extract, index, or search file
+  contents.
 - No AI agent, course-name resolution, database, or persistence is implemented.
 - Message bodies, MIME parts, and attachments are not processed.
 - Gmail result pagination is not implemented.
@@ -246,14 +291,10 @@ access.
 
 The following items are future work and are not currently implemented:
 
-1. Obtain institutional authorization for supported Moodle access.
-2. Add a read-only Moodle connector using the officially supported
-   authentication and API mechanism.
-3. Use Moodle as the authoritative source for enrolled courses, course names,
-   sections, deadlines, announcements, and materials where the authorized API
-   actually exposes them.
-4. Add document processing and search for course materials when supported by
-   the Moodle integration.
-5. Compose higher-level deterministic academic operations.
-6. Add an AI layer that selects and combines those tested operations.
-7. Later consider state, automation, and a user-facing interface.
+1. Add content extraction for supported files discovered in the external local
+   materials root.
+2. Compose higher-level deterministic academic operations over available data.
+3. Consider Moodle as an optional authoritative source only if an officially
+   supported integration is authorized and verified.
+4. Add an AI layer that selects and combines tested operations.
+5. Later consider state, automation, and a user-facing interface.
