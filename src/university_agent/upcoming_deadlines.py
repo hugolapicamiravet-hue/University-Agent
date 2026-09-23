@@ -68,3 +68,31 @@ def find_upcoming_deadlines(
         )
     )
     return deadlines
+
+
+def find_upcoming_deadlines_until(
+    connector: GmailConnector,
+    *,
+    now: datetime,
+    until: datetime,
+    max_results: int = 100,
+) -> list[DetectedDeadline]:
+    """Return deadlines strictly after ``now`` and no later than ``until``."""
+    if now.tzinfo is not None:
+        raise ValueError("now must be timezone-naive")
+    if until.tzinfo is not None:
+        raise ValueError("until must be timezone-naive")
+    if until <= now:
+        raise ValueError("until must be later than now")
+
+    deadlines = find_upcoming_deadlines(
+        connector,
+        now=now,
+        max_results=max_results,
+    )
+    return [
+        deadline
+        for deadline in deadlines
+        if deadline.notification.event_at is not None
+        and deadline.notification.event_at <= until
+    ]

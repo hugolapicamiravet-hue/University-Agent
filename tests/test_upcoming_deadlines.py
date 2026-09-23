@@ -6,7 +6,10 @@ from unittest.mock import Mock
 
 from university_agent.academic_notifications import NotificationCategory
 from university_agent.connectors.gmail import GmailConnector, GmailMessage
-from university_agent.upcoming_deadlines import find_upcoming_deadlines
+from university_agent.upcoming_deadlines import (
+    find_upcoming_deadlines,
+    find_upcoming_deadlines_until,
+)
 
 
 def gmail_message(
@@ -199,6 +202,137 @@ class UpcomingDeadlinesTests(unittest.TestCase):
 
         with self.assertRaises(RuntimeError) as caught:
             find_upcoming_deadlines(self.connector, now=self.now)
+
+        self.assertIs(caught.exception, error)
+
+
+class UpcomingDeadlinesUntilTests(unittest.TestCase):
+    def setUp(self):
+        self.connector = Mock(spec=GmailConnector)
+        self.now = datetime(2054, 9, 20, 12, 0)
+        self.until = datetime(2054, 9, 23, 10, 0)
+
+    def test_deadline_before_until_is_included(self):
+        self.connector.search_messages.return_value = [
+            gmail_message("before-until", deadline_subject(22, 10))
+        ]
+
+        results = find_upcoming_deadlines_until(
+            self.connector,
+            now=self.now,
+            until=self.until,
+        )
+
+        self.assertEqual([result.message_id for result in results], ["before-until"])
+
+    def test_deadline_equal_to_until_is_included(self):
+        self.connector.search_messages.return_value = [
+            gmail_message("at-until", deadline_subject(23, 10))
+        ]
+
+        results = find_upcoming_deadlines_until(
+            self.connector,
+            now=self.now,
+            until=self.until,
+        )
+
+        self.assertEqual([result.message_id for result in results], ["at-until"])
+
+    def test_deadline_after_until_is_excluded(self):
+        self.connector.search_messages.return_value = [
+            gmail_message("after-until", deadline_subject(24, 10))
+        ]
+
+        self.assertEqual(
+            find_upcoming_deadlines_until(
+                self.connector,
+                now=self.now,
+                until=self.until,
+            ),
+            [],
+        )
+
+    def test_deadline_equal_to_now_remains_excluded(self):
+        self.connector.search_messages.return_value = [
+            gmail_message("at-now", deadline_subject(20, 12))
+        ]
+
+        self.assertEqual(
+            find_upcoming_deadlines_until(
+                self.connector,
+                now=self.now,
+                until=self.until,
+            ),
+            [],
+        )
+
+    def test_existing_order_and_message_id_tie_breaking_are_preserved(self):
+        self.connector.search_messages.return_value = [
+            gmail_message("later", deadline_subject(23, 9, "Later")),
+            gmail_message("same-b", deadline_subject(22, 10, "Same B")),
+            gmail_message("earlier", deadline_subject(21, 9, "Earlier")),
+            gmail_message("same-a", deadline_subject(22, 10, "Same A")),
+        ]
+
+        results = find_upcoming_deadlines_until(
+            self.connector,
+            now=self.now,
+            until=self.until,
+        )
+
+        self.assertEqual(
+            [result.message_id for result in results],
+            ["earlier", "same-a", "same-b", "later"],
+        )
+
+    def test_max_results_is_forwarded_unchanged(self):
+        self.connector.search_messages.return_value = []
+
+        find_upcoming_deadlines_until(
+            self.connector,
+            now=self.now,
+            until=self.until,
+            max_results=37,
+        )
+
+        self.connector.search_messages.assert_called_once_with(
+            "subject:\"Venciment el\"",
+            max_results=37,
+        )
+
+    def test_invalid_bounds_are_rejected_before_gmail_access(self):
+        aware_now = self.now.replace(tzinfo=timezone.utc)
+        aware_until = self.until.replace(tzinfo=timezone.utc)
+        cases = (
+            (aware_now, self.until, "now must be timezone-naive"),
+            (self.now, aware_until, "until must be timezone-naive"),
+            (self.now, self.now, "until must be later than now"),
+            (self.now, datetime(2054, 9, 19, 12, 0), "until must be later than now"),
+        )
+
+        for now, until, message in cases:
+            with self.subTest(now=now, until=until):
+                self.connector.reset_mock()
+
+                with self.assertRaisesRegex(ValueError, message):
+                    find_upcoming_deadlines_until(
+                        self.connector,
+                        now=now,
+                        until=until,
+                    )
+
+                self.connector.search_messages.assert_not_called()
+
+    def test_gmail_exception_object_propagates_unchanged(self):
+        error = RuntimeError("API failure")
+        self.connector.search_messages.side_effect = error
+
+        with self.assertRaises(RuntimeError) as caught:
+            find_upcoming_deadlines_until(
+                self.connector,
+                now=self.now,
+                until=self.until,
+            )
 
         self.assertIs(caught.exception, error)
 
