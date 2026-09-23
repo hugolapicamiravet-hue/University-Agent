@@ -11,8 +11,9 @@ read-only data access and deterministic processing before adding an AI layer.
 Today, the project reads Gmail metadata, parses supported academic email
 subjects, detects upcoming deadlines, and retrieves recent notices explicitly
 associated with a course code. It also discovers user-managed course directories
-and material files from an explicitly configured local filesystem root. It does
-not currently implement an AI agent or connect to Moodle.
+and material files from an explicitly configured local filesystem root, with
+deterministic text extraction for TXT and PDF files. It does not currently
+implement an AI agent or connect to Moodle.
 
 ## Implemented functionality
 
@@ -72,8 +73,19 @@ outside this repository. Immediate visible directories are treated as course
 names, and visible, non-symlinked files are discovered recursively within an
 exact course directory.
 
-This capability returns filesystem metadata only. It does not open, extract,
-index, classify, or search document contents.
+Discovery itself returns filesystem metadata only. Document contents remain
+local and are read only when explicitly passed to the text-extraction operation.
+
+### Material text extraction
+
+`extract_text()` validates that a material still belongs to its supplied
+`LocalMaterialsSource`, then extracts strict UTF-8 text from TXT files or
+embedded text from PDF files. PDF page boundaries are preserved alongside the
+combined text.
+
+Scanned or image-only PDFs require OCR and are not supported. DOCX and PPTX are
+also not supported. Extraction does not index, classify, summarize, or
+semantically search document contents.
 
 ## Architecture
 
@@ -98,6 +110,12 @@ LocalMaterialsSource
     |
     v
 LocalCourse / LocalMaterial metadata
+    |
+    v
+material_text.py
+    |
+    v
+ExtractedDocument
 ```
 
 The connector owns communication with the external source, parsers perform
@@ -112,7 +130,8 @@ depend on Gmail.
 - Python 3.12 or newer
 
 Runtime dependencies are declared in `pyproject.toml` and are limited to the
-Google libraries required for Gmail OAuth and API access.
+Google libraries required for Gmail OAuth and API access plus `pypdf` for
+embedded PDF text extraction.
 
 ## Installation
 
@@ -210,6 +229,19 @@ Discovery includes all visible regular files recursively, regardless of file
 extension. Hidden entries and symbolic links are ignored. File contents are not
 read.
 
+To extract supported text explicitly:
+
+```python
+from university_agent.material_text import extract_text
+
+material = materials[0]
+document = extract_text(source, material)
+```
+
+TXT files are decoded strictly as UTF-8. PDF extraction preserves one text
+string per page and does not perform OCR. The extracted result retains the
+course name and relative material path without exposing an absolute path.
+
 ### Manual OAuth demo
 
 Run:
@@ -230,7 +262,7 @@ Run the isolated unit-test suite from the repository root after installation:
 python -m unittest discover -s tests
 ```
 
-The current suite contains 93 tests. Pure parsers are tested directly, while
+The current suite contains 109 tests. Pure parsers are tested directly, while
 Gmail-dependent behavior uses injected or mocked services and connectors. The
 tests do not require live Gmail access, OAuth credentials, tokens, or network
 access.
@@ -250,6 +282,7 @@ access.
 │       ├── academic_notifications.py
 │       ├── course_notices.py
 │       ├── local_materials.py
+│       ├── material_text.py
 │       ├── recent_course_notices.py
 │       ├── upcoming_deadlines.py
 │       └── connectors/
@@ -260,6 +293,7 @@ access.
     ├── test_course_notices.py
     ├── test_gmail.py
     ├── test_local_materials.py
+    ├── test_material_text.py
     ├── test_recent_course_notices.py
     └── test_upcoming_deadlines.py
 ```
@@ -278,9 +312,12 @@ access.
 ## Current limitations
 
 - Gmail is the only implemented network data source; Moodle is not integrated.
-- Local material discovery does not read, extract, index, or search file
-  contents.
+- Material text extraction supports only UTF-8 TXT and embedded PDF text.
+- Scanned or image-only PDFs, OCR, DOCX, and PPTX are not supported.
+- Large or unusually complex PDFs may require substantial memory.
 - No AI agent, course-name resolution, database, or persistence is implemented.
+- No chunking, embeddings, vector database, semantic search, RAG, or document
+  summarization is implemented.
 - Message bodies, MIME parts, and attachments are not processed.
 - Gmail result pagination is not implemented.
 - Deterministic parsers support only observed subject formats.
@@ -291,8 +328,7 @@ access.
 
 The following items are future work and are not currently implemented:
 
-1. Add content extraction for supported files discovered in the external local
-   materials root.
+1. Add DOCX or PPTX text extraction only if real local materials justify it.
 2. Compose higher-level deterministic academic operations over available data.
 3. Consider Moodle as an optional authoritative source only if an officially
    supported integration is authorized and verified.
