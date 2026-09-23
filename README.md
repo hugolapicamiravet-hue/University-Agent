@@ -12,8 +12,8 @@ Today, the project reads Gmail metadata, parses supported academic email
 subjects, detects upcoming deadlines, and retrieves recent notices explicitly
 associated with a course code. It also discovers user-managed course directories
 and material files from an explicitly configured local filesystem root, with
-deterministic text extraction for TXT and PDF files. It does not currently
-implement an AI agent or connect to Moodle.
+deterministic text extraction, chunking, and lexical retrieval for TXT and PDF
+files. It does not currently implement an AI agent or connect to Moodle.
 
 ## Implemented functionality
 
@@ -87,6 +87,22 @@ Scanned or image-only PDFs require OCR and are not supported. DOCX and PPTX are
 also not supported. Extraction does not index, classify, summarize, or
 semantically search document contents.
 
+### Deterministic chunking and lexical search
+
+`chunk_document()` splits extracted text at paragraph and whitespace boundaries
+using a configurable character limit. PDF chunks preserve 1-based page
+provenance and never combine text from different pages.
+
+`search_chunks()` performs transparent Unicode-aware lexical matching. It ranks
+chunks by the number of distinct query terms matched, then by total term
+occurrences, with deterministic provenance-based tie breaking. Accents are
+preserved; no stemming, translation, embeddings, or semantic matching occurs.
+
+`search_local_materials()` composes discovery, extraction, chunking, and search
+for one exact local course name or all discovered courses. Unsupported formats
+are skipped in this batch workflow, while corrupt supported TXT or PDF files
+still raise an extraction error.
+
 ## Architecture
 
 ```text
@@ -104,18 +120,21 @@ academic_notifications.py    course_notices.py
 upcoming_deadlines.py        recent_course_notices.py
 
 External materials root
-    |
-    v
+        |
+        v
 LocalMaterialsSource
-    |
-    v
-LocalCourse / LocalMaterial metadata
-    |
-    v
-material_text.py
-    |
-    v
-ExtractedDocument
+        |
+        v
+extract_text()
+        |
+        v
+chunk_document()
+        |
+        v
+search_chunks()
+        |
+        v
+search_local_materials()
 ```
 
 The connector owns communication with the external source, parsers perform
@@ -242,6 +261,26 @@ TXT files are decoded strictly as UTF-8. PDF extraction preserves one text
 string per page and does not perform OCR. The extracted result retains the
 course name and relative material path without exposing an absolute path.
 
+To search supported materials directly:
+
+```python
+from pathlib import Path
+
+from university_agent.local_material_search import search_local_materials
+from university_agent.local_materials import LocalMaterialsSource
+
+source = LocalMaterialsSource(Path("/path/to/university-materials"))
+results = search_local_materials(
+    source,
+    query="distributed systems",
+    course_name="Fictional Course Alpha",
+    limit=5,
+)
+```
+
+Omit `course_name` to search every discovered course. Course matching is exact.
+This is local lexical search, not semantic search or RAG.
+
 ### Manual OAuth demo
 
 Run:
@@ -262,7 +301,7 @@ Run the isolated unit-test suite from the repository root after installation:
 python -m unittest discover -s tests
 ```
 
-The current suite contains 109 tests. Pure parsers are tested directly, while
+The current suite contains 150 tests. Pure parsers are tested directly, while
 Gmail-dependent behavior uses injected or mocked services and connectors. The
 tests do not require live Gmail access, OAuth credentials, tokens, or network
 access.
@@ -281,7 +320,10 @@ access.
 │       ├── __init__.py
 │       ├── academic_notifications.py
 │       ├── course_notices.py
+│       ├── local_material_search.py
 │       ├── local_materials.py
+│       ├── material_chunks.py
+│       ├── material_search.py
 │       ├── material_text.py
 │       ├── recent_course_notices.py
 │       ├── upcoming_deadlines.py
@@ -292,7 +334,10 @@ access.
     ├── test_academic_notifications.py
     ├── test_course_notices.py
     ├── test_gmail.py
+    ├── test_local_material_search.py
     ├── test_local_materials.py
+    ├── test_material_chunks.py
+    ├── test_material_search.py
     ├── test_material_text.py
     ├── test_recent_course_notices.py
     └── test_upcoming_deadlines.py
@@ -306,6 +351,8 @@ access.
   directory.
 - Mailbox metadata, snippets, diagnostic output, and demo output may contain
   private information and must not be committed or published.
+- Local material contents and extracted search results remain private user data;
+  do not publish them in logs, fixtures, issues, or commits.
 - Credentials, client secrets, access tokens, and refresh tokens must never be
   included in source code, documentation, issues, or logs.
 
@@ -316,8 +363,9 @@ access.
 - Scanned or image-only PDFs, OCR, DOCX, and PPTX are not supported.
 - Large or unusually complex PDFs may require substantial memory.
 - No AI agent, course-name resolution, database, or persistence is implemented.
-- No chunking, embeddings, vector database, semantic search, RAG, or document
-  summarization is implemented.
+- Search is lexical only: it does not infer synonyms or semantic similarity.
+- No embeddings, vector database, RAG, LLM, or document summarization is
+  implemented.
 - Message bodies, MIME parts, and attachments are not processed.
 - Gmail result pagination is not implemented.
 - Deterministic parsers support only observed subject formats.
@@ -329,7 +377,8 @@ access.
 The following items are future work and are not currently implemented:
 
 1. Add DOCX or PPTX text extraction only if real local materials justify it.
-2. Compose higher-level deterministic academic operations over available data.
+2. Expose the tested deterministic operations through a minimal agent-facing
+   tool layer.
 3. Consider Moodle as an optional authoritative source only if an officially
    supported integration is authorized and verified.
 4. Add an AI layer that selects and combines tested operations.
