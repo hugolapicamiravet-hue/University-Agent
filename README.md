@@ -162,6 +162,45 @@ Natural-language interpretation, ambiguity resolution, and presentation remain
 future agent responsibilities. Parsing, bounds validation, filesystem safety,
 text extraction, chunking, and lexical ranking remain deterministic code.
 
+## Future LLM integration boundary
+
+The recommended first runtime is the OpenAI Responses API with strict function
+calling, but no OpenAI SDK or LLM adapter is implemented yet. Provider-specific
+schemas should be introduced together with that runtime rather than duplicated
+now as generic metadata.
+
+The future model may select an operation and supply semantic inputs such as an
+exact course code/year, a material query, or an optional exact local course
+name. The application host must inject and control:
+
+- `GmailConnector` and `LocalMaterialsSource`
+- credentials, local roots, and trusted current time
+- timezone and calendar policy
+- Gmail/material result limits and chunk-size limits
+- validation, safe error translation, and tool execution
+
+`resolve_remaining_week_window()` converts a trusted timezone-aware `now` and
+an explicit IANA timezone name into timezone-naïve local bounds from that moment
+through Sunday 23:59:59.999999. It uses an ISO Monday–Sunday week, never reads
+the system clock, and produces bounds compatible with the current deadline
+parser. The host—not Gmail or the model—chooses the timezone.
+
+For a query such as “¿Qué tengo pendiente esta semana?”, the model should select
+the deadline operation, the host should resolve and validate the week bounds,
+and `get_deadlines()` should return only narrowed deadline fields. The final
+answer must describe these as deadlines detected from supported Gmail subject
+formats, not as a complete authoritative task list.
+
+For recent course notices, the model may provide an exact supported course code
+and academic year. For material questions, it may provide search terms and an
+optional exact local course name; it receives only ranked `MaterialPassage`
+values, never arbitrary filesystem access.
+
+Input-validation errors may be returned as concise correction guidance. Empty
+results are normal. Authentication, provider, filesystem, and unexpected
+internal errors must be translated to safe application errors; raw exception
+details, credentials, paths, and connector state must not be sent to the model.
+
 ## Requirements
 
 - Python 3.12 or newer
@@ -349,7 +388,7 @@ Run the isolated unit-test suite from the repository root after installation:
 python -m unittest discover -s tests
 ```
 
-The current suite contains 160 tests. Pure parsers are tested directly, while
+The current suite contains 168 tests. Pure parsers are tested directly, while
 Gmail-dependent behavior uses injected or mocked services and connectors. The
 tests do not require live Gmail access, OAuth credentials, tokens, or network
 access.
@@ -375,6 +414,7 @@ access.
 │       ├── material_search.py
 │       ├── material_text.py
 │       ├── recent_course_notices.py
+│       ├── time_windows.py
 │       ├── upcoming_deadlines.py
 │       └── connectors/
 │           ├── __init__.py
@@ -390,6 +430,7 @@ access.
     ├── test_material_search.py
     ├── test_material_text.py
     ├── test_recent_course_notices.py
+    ├── test_time_windows.py
     └── test_upcoming_deadlines.py
 ```
 
