@@ -103,38 +103,40 @@ for one exact local course name or all discovered courses. Unsupported formats
 are skipped in this batch workflow, while corrupt supported TXT or PDF files
 still raise an extraction error.
 
+### Agent-ready application operations
+
+`academic_operations.py` exposes three narrow deterministic operations designed
+to be bound to a future agent runtime:
+
+- `get_deadlines()` returns titles and due times within explicit `now` and
+  `until` bounds.
+- `get_course_notices()` returns notice text, explicit course codes, academic
+  year, and the original Gmail Date header.
+- `search_materials()` returns ranked local passages with a course name,
+  relative document path, optional PDF page number, text, and lexical score.
+
+The Gmail connector and local-material source are supplied by the application
+host. Results intentionally omit Gmail message/thread identifiers, raw email
+subjects, and absolute filesystem paths. These are application operations for a
+future agent; no AI agent or tool-calling runtime is implemented.
+
 ## Architecture
 
 ```text
-Gmail API
-    |
-    v
-GmailConnector
-    |
-    +-----------------------------+
-    |                             |
-    v                             v
-academic_notifications.py    course_notices.py
-    |                             |
-    v                             v
-upcoming_deadlines.py        recent_course_notices.py
-
-External materials root
-        |
-        v
-LocalMaterialsSource
-        |
-        v
-extract_text()
-        |
-        v
-chunk_document()
-        |
-        v
-search_chunks()
-        |
-        v
-search_local_materials()
+                        future agent (not implemented)
+                                    |
+                         academic_operations.py
+                           /        |         \
+                          /         |          \
+                 deadlines       notices      materials
+                     |               |             |
+               Gmail workflows  Gmail workflow  local search workflow
+                     |               |             |
+                 Gmail API       Gmail API     user-managed files
+                                                  |
+                                      discover -> extract -> chunk
+                                                  |
+                                           lexical search
 ```
 
 The connector owns communication with the external source, parsers perform
@@ -143,6 +145,22 @@ into application operations. This keeps OAuth and Gmail access out of parsing
 logic and allows application behavior to be tested without a live mailbox.
 `LocalMaterialsSource` independently owns filesystem discovery and does not
 depend on Gmail.
+
+## Query capability matrix
+
+| Example question | Status | Current boundary |
+| --- | --- | --- |
+| “¿Qué entregas tengo esta semana?” | Partially supported | Detected Gmail deadlines can be bounded by explicit `now` and `until`; calendar interpretation and completeness are not provided. |
+| “¿Hay avisos recientes de EI0001?” | Supported within limits | Requires an exact supported course code and academic year; only recognized course-prefixed Gmail subjects are returned. |
+| “¿Dónde hablan mis apuntes de memoria caché?” | Supported within limits | Lexically searches supported local TXT and embedded-text PDF materials and returns relative source provenance. |
+| “Explícame memoria caché usando mis apuntes.” | Partially supported | Relevant passages can be retrieved, but answer generation is not implemented. |
+| “¿Qué asignaturas tengo?” | Partially supported | User-managed local directory names can be listed; authoritative enrollment is unavailable. |
+| “¿Qué ha cambiado hoy en Moodle?” | Not yet supported | Moodle is not integrated. |
+| “¿He entregado esta práctica?” | Not yet supported | Gmail subject evidence is not an authoritative submission-state source. |
+
+Natural-language interpretation, ambiguity resolution, and presentation remain
+future agent responsibilities. Parsing, bounds validation, filesystem safety,
+text extraction, chunking, and lexical ranking remain deterministic code.
 
 ## Requirements
 
@@ -281,6 +299,36 @@ results = search_local_materials(
 Omit `course_name` to search every discovered course. Course matching is exact.
 This is local lexical search, not semantic search or RAG.
 
+### Agent-ready operations
+
+Application hosts can compose the narrow result models without exposing broad
+connector capabilities to a future agent runtime:
+
+```python
+from datetime import datetime
+from pathlib import Path
+
+from university_agent.academic_operations import get_deadlines, search_materials
+from university_agent.connectors.gmail import GmailConnector
+from university_agent.local_materials import LocalMaterialsSource
+
+deadlines = get_deadlines(
+    GmailConnector(),
+    now=datetime(2026, 9, 21, 9, 0),
+    until=datetime(2026, 9, 28, 9, 0),
+)
+
+passages = search_materials(
+    LocalMaterialsSource(Path("/path/to/university-materials")),
+    query="cache coherence",
+    course_name="Fictional Course Alpha",
+)
+```
+
+The caller is responsible for injecting authenticated/local dependencies and
+explicit time bounds. These functions return structured values and do not
+print, persist, summarize, or invoke an AI model.
+
 ### Manual OAuth demo
 
 Run:
@@ -301,7 +349,7 @@ Run the isolated unit-test suite from the repository root after installation:
 python -m unittest discover -s tests
 ```
 
-The current suite contains 150 tests. Pure parsers are tested directly, while
+The current suite contains 160 tests. Pure parsers are tested directly, while
 Gmail-dependent behavior uses injected or mocked services and connectors. The
 tests do not require live Gmail access, OAuth credentials, tokens, or network
 access.
@@ -318,6 +366,7 @@ access.
 ├── src/
 │   └── university_agent/
 │       ├── __init__.py
+│       ├── academic_operations.py
 │       ├── academic_notifications.py
 │       ├── course_notices.py
 │       ├── local_material_search.py
@@ -331,6 +380,7 @@ access.
 │           ├── __init__.py
 │           └── gmail.py
 └── tests/
+    ├── test_academic_operations.py
     ├── test_academic_notifications.py
     ├── test_course_notices.py
     ├── test_gmail.py
@@ -362,7 +412,8 @@ access.
 - Material text extraction supports only UTF-8 TXT and embedded PDF text.
 - Scanned or image-only PDFs, OCR, DOCX, and PPTX are not supported.
 - Large or unusually complex PDFs may require substantial memory.
-- No AI agent, course-name resolution, database, or persistence is implemented.
+- No AI agent, LLM tool-calling runtime, course-name resolution, database, or
+  persistence is implemented.
 - Search is lexical only: it does not infer synonyms or semantic similarity.
 - No embeddings, vector database, RAG, LLM, or document summarization is
   implemented.
@@ -376,10 +427,11 @@ access.
 
 The following items are future work and are not currently implemented:
 
-1. Add DOCX or PPTX text extraction only if real local materials justify it.
-2. Expose the tested deterministic operations through a minimal agent-facing
-   tool layer.
+1. Bind the narrow application operations to an LLM runtime with host-managed
+   dependencies, time policy, and credential boundaries.
+2. Add DOCX or PPTX text extraction only if real local materials justify it.
 3. Consider Moodle as an optional authoritative source only if an officially
    supported integration is authorized and verified.
-4. Add an AI layer that selects and combines tested operations.
+4. Evaluate semantic retrieval as a complement to the existing lexical search
+   only when real queries demonstrate the need.
 5. Later consider state, automation, and a user-facing interface.
