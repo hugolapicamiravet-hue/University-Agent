@@ -1,5 +1,7 @@
 # University Agent
 
+[![CI](https://github.com/hugolapicamiravet-hue/University-Agent/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/hugolapicamiravet-hue/University-Agent/actions/workflows/ci.yml)
+
 ## Overview
 
 University Agent is a Python project for building an AI-assisted university
