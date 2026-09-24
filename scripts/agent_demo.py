@@ -5,10 +5,15 @@ from datetime import datetime
 from pathlib import Path
 from zoneinfo import ZoneInfo
 
+from ollama import Client as OllamaClient
 from openai import OpenAI
 
 from university_agent.connectors.gmail import GmailConnector
 from university_agent.local_materials import LocalMaterialsSource
+from university_agent.ollama_agent import (
+    OllamaUniversityAgent,
+    OllamaUniversityAgentError,
+)
 from university_agent.openai_agent import UniversityAgent, UniversityAgentError
 
 
@@ -16,7 +21,12 @@ def main() -> int:
     parser = argparse.ArgumentParser(description="Run one University Agent query")
     parser.add_argument("--materials-root", required=True, type=Path)
     parser.add_argument("--timezone", required=True)
-    parser.add_argument("--model", default="gpt-5.6-luna")
+    parser.add_argument(
+        "--provider",
+        choices=("ollama", "openai"),
+        default="ollama",
+    )
+    parser.add_argument("--model")
     parser.add_argument("query", nargs="*")
     arguments = parser.parse_args()
 
@@ -26,18 +36,28 @@ def main() -> int:
     if not query:
         parser.error("a non-empty query is required")
 
-    agent = UniversityAgent(
-        client=OpenAI(),
-        connector=GmailConnector(),
-        materials_source=LocalMaterialsSource(arguments.materials_root),
-        timezone_name=arguments.timezone,
-        model=arguments.model,
-    )
+    common = {
+        "connector": GmailConnector(),
+        "materials_source": LocalMaterialsSource(arguments.materials_root),
+        "timezone_name": arguments.timezone,
+    }
+    if arguments.provider == "ollama":
+        agent = OllamaUniversityAgent(
+            client=OllamaClient(),
+            model=arguments.model or "qwen3:14b",
+            **common,
+        )
+    else:
+        agent = UniversityAgent(
+            client=OpenAI(),
+            model=arguments.model or "gpt-5.6-luna",
+            **common,
+        )
     now = datetime.now(ZoneInfo(arguments.timezone))
 
     try:
         answer = agent.run(query, now=now)
-    except UniversityAgentError:
+    except (UniversityAgentError, OllamaUniversityAgentError):
         print("The agent could not complete the request safely.")
         return 1
 

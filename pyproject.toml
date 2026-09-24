@@ -12,6 +12,7 @@ dependencies = [
     "google-api-python-client",
     "google-auth-httplib2",
     "google-auth-oauthlib",
+    "ollama>=0.6,<1",
     "openai>=3,<4",
     "pypdf>=6,<7",
 ]

@@ -133,7 +133,7 @@ class UniversityAgentTests(unittest.TestCase):
             )
             self.assertTrue(forbidden.isdisjoint(parameters["properties"]))
 
-    @patch("university_agent.openai_agent.get_deadlines")
+    @patch("university_agent.agent_tools.get_deadlines")
     def test_deadline_tool_uses_host_week_and_serializes_narrow_results(
         self,
         get_deadlines,
@@ -168,7 +168,7 @@ class UniversityAgentTests(unittest.TestCase):
             },
         )
 
-    @patch("university_agent.openai_agent.get_course_notices")
+    @patch("university_agent.agent_tools.get_course_notices")
     def test_course_notice_tool_forwards_exact_arguments(self, get_notices):
         get_notices.return_value = [
             CourseNoticeResult(
@@ -208,7 +208,7 @@ class UniversityAgentTests(unittest.TestCase):
             },
         )
 
-    @patch("university_agent.openai_agent.search_materials")
+    @patch("university_agent.agent_tools.search_materials")
     def test_material_tool_preserves_citation_provenance(self, search):
         search.return_value = [
             MaterialPassage(
@@ -244,8 +244,8 @@ class UniversityAgentTests(unittest.TestCase):
         self.assertNotIn("path", result)
         self.assertNotIn("message_id", result)
 
-    @patch("university_agent.openai_agent.get_deadlines")
-    @patch("university_agent.openai_agent.search_materials")
+    @patch("university_agent.agent_tools.get_deadlines")
+    @patch("university_agent.agent_tools.search_materials")
     def test_multiple_tool_calls_are_executed_in_one_round(
         self,
         search,
@@ -326,7 +326,7 @@ class UniversityAgentTests(unittest.TestCase):
             "unknown tool name",
         )
 
-    @patch("university_agent.openai_agent.search_materials")
+    @patch("university_agent.agent_tools.search_materials")
     def test_model_limit_above_host_cap_is_rejected_before_operation(self, search):
         call = FakeFunctionCall(
             "search_local_materials",
@@ -345,7 +345,7 @@ class UniversityAgentTests(unittest.TestCase):
             "limit must not exceed 10",
         )
 
-    @patch("university_agent.openai_agent.get_course_notices")
+    @patch("university_agent.agent_tools.get_course_notices")
     def test_application_validation_error_is_safe_and_recoverable(self, get_notices):
         get_notices.side_effect = ValueError(
             "course_code must match (?:EI|MT)[0-9]{4}"
@@ -366,7 +366,7 @@ class UniversityAgentTests(unittest.TestCase):
         self.assertEqual(payload["error"]["code"], "invalid_arguments")
         self.assertIn("course_code", payload["error"]["message"])
 
-    @patch("university_agent.openai_agent.search_materials")
+    @patch("university_agent.agent_tools.search_materials")
     def test_internal_tool_failure_is_sanitized_at_host_boundary(self, search):
         search.side_effect = RuntimeError("/private/user/secret-file.pdf")
         call = FakeFunctionCall(
@@ -397,7 +397,7 @@ class UniversityAgentTests(unittest.TestCase):
             max_tool_rounds=1,
         )
 
-        with patch("university_agent.openai_agent.get_deadlines", return_value=[]):
+        with patch("university_agent.agent_tools.get_deadlines", return_value=[]):
             with self.assertRaises(UniversityAgentRoundLimitError):
                 agent.run("Fictional query", now=self.now)
 
