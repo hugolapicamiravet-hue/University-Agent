@@ -369,6 +369,23 @@ Discovery includes all visible regular files recursively, regardless of file
 extension. Hidden entries and symbolic links are ignored. File contents are not
 read.
 
+Material roots can also contain generated or vendor trees unrelated to the
+user's academic sources. Hosts can exclude exact directory paths relative to
+each course:
+
+```python
+source = LocalMaterialsSource(
+    Path("/path/to/university-materials"),
+    excluded_relative_paths=("Fictional Project/Library", "Fictional Project/Temp"),
+)
+```
+
+Excluded directory trees are never traversed or searched. Exclusions are
+explicit host configuration: they are not model tool arguments, and the
+application does not silently apply universal framework-specific defaults. An
+exact relative exclusion such as `Fictional Project/Library` does not exclude a
+different directory such as `Notes/Library`.
+
 To extract supported text explicitly:
 
 ```python
@@ -443,6 +460,16 @@ python scripts/agent_demo.py \
   --materials-root /path/to/university-materials \
   --timezone Europe/Madrid \
   "¿Dónde hablan mis apuntes de memoria caché?"
+```
+
+Repeat `--exclude` to omit exact generated subtrees relative to each course:
+
+```bash
+python scripts/agent_demo.py \
+  --materials-root /path/to/university-materials \
+  --exclude "Fictional Project/Library" \
+  --exclude "Fictional Project/Temp" \
+  --timezone Europe/Madrid
 ```
 
 Ollama is the default, so `--provider ollama` may be omitted. Override the
@@ -583,8 +610,8 @@ or network access.
 
 The following items are future work and are not currently implemented:
 
-1. Evaluate local retrieval against a small opt-in set of real user materials
-   without committing or logging their contents.
+1. Consider an invalidated local extraction cache only if repeated searches
+   justify the additional state and lifecycle complexity.
 2. Add DOCX or PPTX text extraction only if real local materials justify it.
 3. Consider Moodle as an optional authoritative source only if an officially
    supported integration is authorized and verified.

@@ -20,6 +20,12 @@ from university_agent.openai_agent import UniversityAgent, UniversityAgentError
 def main() -> int:
     parser = argparse.ArgumentParser(description="Run one University Agent query")
     parser.add_argument("--materials-root", required=True, type=Path)
+    parser.add_argument(
+        "--exclude",
+        action="append",
+        default=[],
+        help="exclude an exact directory path relative to each course",
+    )
     parser.add_argument("--timezone", required=True)
     parser.add_argument(
         "--provider",
@@ -38,7 +44,10 @@ def main() -> int:
 
     common = {
         "connector": GmailConnector(),
-        "materials_source": LocalMaterialsSource(arguments.materials_root),
+        "materials_source": LocalMaterialsSource(
+            arguments.materials_root,
+            excluded_relative_paths=arguments.exclude,
+        ),
         "timezone_name": arguments.timezone,
     }
     if arguments.provider == "ollama":
