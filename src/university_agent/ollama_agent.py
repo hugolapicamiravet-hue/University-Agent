@@ -12,7 +12,10 @@ from university_agent.agent_tools import (
     AgentToolRuntime,
     AgentToolRuntimeError,
     ToolArgumentError,
+    append_material_sources,
     invalid_arguments_payload,
+    material_citations_from_payload,
+    required_material_search_arguments,
 )
 from university_agent.connectors.gmail import GmailConnector
 from university_agent.local_materials import LocalMaterialsSource
@@ -84,7 +87,34 @@ class OllamaUniversityAgent:
             {"role": "system", "content": SYSTEM_INSTRUCTIONS},
             {"role": "user", "content": user_input},
         ]
+        citations = []
         tool_rounds = 0
+
+        required_arguments = required_material_search_arguments(user_input)
+        if required_arguments is not None:
+            payload = self._execute_runtime(
+                "search_local_materials",
+                required_arguments,
+                now=now,
+            )
+            citations.extend(material_citations_from_payload(payload))
+            messages.extend(
+                (
+                    {
+                        "role": "assistant",
+                        "content": "",
+                        "tool_calls": [
+                            {
+                                "function": {
+                                    "name": "search_local_materials",
+                                    "arguments": required_arguments,
+                                }
+                            }
+                        ],
+                    },
+                    _tool_message("search_local_materials", payload),
+                )
+            )
 
         while True:
             response = self._chat(messages)
@@ -105,7 +135,7 @@ class OllamaUniversityAgent:
                     raise OllamaUniversityAgentProviderError(
                         "Ollama response did not contain final text"
                     )
-                return content
+                return append_material_sources(content, citations)
 
             if tool_rounds >= self._max_tool_rounds:
                 raise OllamaUniversityAgentRoundLimitError(
@@ -130,28 +160,25 @@ class OllamaUniversityAgent:
                     tool_name = name
                 else:
                     tool_name = name
-                    try:
-                        payload = self._runtime.execute(
-                            name,
-                            arguments,
-                            now=now,
-                        )
-                    except AgentToolRuntimeError as error:
-                        raise OllamaUniversityAgentToolError(
-                            "Academic operation failed"
-                        ) from error
+                    payload = self._execute_runtime(name, arguments, now=now)
 
-                messages.append(
-                    {
-                        "role": "tool",
-                        "tool_name": tool_name,
-                        "content": json.dumps(
-                            payload,
-                            ensure_ascii=False,
-                            separators=(",", ":"),
-                        ),
-                    }
-                )
+                if tool_name == "search_local_materials":
+                    citations.extend(material_citations_from_payload(payload))
+                messages.append(_tool_message(tool_name, payload))
+
+    def _execute_runtime(
+        self,
+        name: str,
+        arguments: dict[str, Any],
+        *,
+        now: datetime,
+    ) -> dict[str, Any]:
+        try:
+            return self._runtime.execute(name, arguments, now=now)
+        except AgentToolRuntimeError as error:
+            raise OllamaUniversityAgentToolError(
+                "Academic operation failed"
+            ) from error
 
     def _chat(self, messages: list[Any]) -> Any:
         try:
@@ -171,3 +198,16 @@ def _value(value: Any, name: str) -> Any:
     if isinstance(value, Mapping):
         return value.get(name)
     return getattr(value, name, None)
+
+
+def _tool_message(
+    tool_name: str,
+    payload: dict[str, Any],
+) -> dict[str, str]:
+    return {
+        "role": "tool",
+        "tool_name": tool_name,
+        "content": json.dumps(
+            payload, ensure_ascii=False, separators=(",", ":")
+        ),
+    }

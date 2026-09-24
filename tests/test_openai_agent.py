@@ -229,7 +229,7 @@ class UniversityAgentTests(unittest.TestCase):
             [call_response(call), FakeResponse([], "Consulta el tema citado.")]
         )
 
-        agent.run("¿Dónde hablan mis apuntes de memoria caché?", now=self.now)
+        agent.run("Busca memoria caché", now=self.now)
 
         search.assert_called_once_with(
             self.source,
@@ -403,8 +403,44 @@ class UniversityAgentTests(unittest.TestCase):
 
         self.assertEqual(len(client.responses.calls), 2)
 
+    @patch("university_agent.agent_tools.search_materials")
+    def test_explicit_material_query_is_presearched_and_cited(self, search):
+        passage = MaterialPassage(
+            course_name="Fictional Systems",
+            relative_path="unit-02/cache.pdf",
+            page_number=7,
+            text="Fictional cache explanation",
+            score=1.5,
+        )
+        search.return_value = [passage, passage]
+        query = "¿Dónde hablan MIS APUNTES de memoria caché?"
+        agent, client = self.make_agent(
+            [FakeResponse([], "Respuesta sin cita del modelo.")]
+        )
+
+        answer = agent.run(query, now=self.now)
+
+        search.assert_called_once_with(
+            self.source,
+            query=query,
+            course_name=None,
+            limit=10,
+            max_chunk_chars=2000,
+        )
+        request_input = client.responses.calls[0]["input"]
+        self.assertEqual(request_input[0], {"role": "user", "content": query})
+        self.assertEqual(request_input[1]["name"], "search_local_materials")
+        payload = json.loads(request_input[2]["output"])
+        self.assertEqual(len(payload["results"]), 2)
+        self.assertTrue(answer.startswith("Respuesta sin cita del modelo."))
+        self.assertEqual(
+            answer.count("Fictional Systems / unit-02/cache.pdf, p. 7"),
+            1,
+        )
+        self.assertNotIn("/private/", answer)
+
     def test_spanish_user_query_is_preserved_exactly(self):
-        query = "¿Dónde hablan mis apuntes de memoria caché?"
+        query = "¿Dónde se explica memoria caché?"
         agent, client = self.make_agent([FakeResponse([], "Respuesta")])
 
         agent.run(query, now=self.now)

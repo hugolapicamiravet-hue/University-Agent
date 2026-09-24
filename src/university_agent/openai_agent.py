@@ -11,7 +11,10 @@ from university_agent.agent_tools import (
     AgentToolRuntime,
     AgentToolRuntimeError,
     ToolArgumentError,
+    append_material_sources,
     invalid_arguments_payload,
+    material_citations_from_payload,
+    required_material_search_arguments,
 )
 from university_agent.connectors.gmail import GmailConnector
 from university_agent.local_materials import LocalMaterialsSource
@@ -84,7 +87,32 @@ class UniversityAgent:
             raise ValueError("now must be timezone-aware")
 
         input_items: list[Any] = [{"role": "user", "content": user_input}]
+        citations = []
         tool_rounds = 0
+
+        required_arguments = required_material_search_arguments(user_input)
+        if required_arguments is not None:
+            payload = self._execute_runtime(
+                "search_local_materials",
+                required_arguments,
+                now=now,
+            )
+            citations.extend(material_citations_from_payload(payload))
+            input_items.extend(
+                (
+                    {
+                        "type": "function_call",
+                        "call_id": "host-required-material-search",
+                        "name": "search_local_materials",
+                        "arguments": json.dumps(required_arguments),
+                    },
+                    {
+                        "type": "function_call_output",
+                        "call_id": "host-required-material-search",
+                        "output": _encode_payload(payload),
+                    },
+                )
+            )
 
         while True:
             response = self._create_response(input_items)
@@ -105,7 +133,7 @@ class UniversityAgent:
                     raise UniversityAgentProviderError(
                         "OpenAI response did not contain final text"
                     )
-                return output_text
+                return append_material_sources(output_text, citations)
 
             if tool_rounds >= self._max_tool_rounds:
                 raise UniversityAgentRoundLimitError(
@@ -116,15 +144,13 @@ class UniversityAgent:
             input_items.extend(output)
             for tool_call in tool_calls:
                 output_payload = self._execute_tool_call(tool_call, now=now)
+                if tool_call.name == "search_local_materials":
+                    citations.extend(material_citations_from_payload(output_payload))
                 input_items.append(
                     {
                         "type": "function_call_output",
                         "call_id": tool_call.call_id,
-                        "output": json.dumps(
-                            output_payload,
-                            ensure_ascii=False,
-                            separators=(",", ":"),
-                        ),
+                        "output": _encode_payload(output_payload),
                     }
                 )
 
@@ -143,6 +169,20 @@ class UniversityAgent:
                 "OpenAI response request failed"
             ) from error
 
+    def _execute_runtime(
+        self,
+        name: str,
+        arguments: dict[str, Any],
+        *,
+        now: datetime,
+    ) -> dict[str, Any]:
+        try:
+            return self._runtime.execute(name, arguments, now=now)
+        except AgentToolRuntimeError as error:
+            raise UniversityAgentToolError(
+                "Academic operation failed"
+            ) from error
+
     def _execute_tool_call(
         self,
         tool_call: Any,
@@ -154,12 +194,11 @@ class UniversityAgent:
         except ToolArgumentError as error:
             return invalid_arguments_payload(error)
 
-        try:
-            return self._runtime.execute(tool_call.name, arguments, now=now)
-        except AgentToolRuntimeError as error:
-            raise UniversityAgentToolError(
-                "Academic operation failed"
-            ) from error
+        return self._execute_runtime(tool_call.name, arguments, now=now)
+
+
+def _encode_payload(payload: dict[str, Any]) -> str:
+    return json.dumps(payload, ensure_ascii=False, separators=(",", ":"))
 
 
 def _decode_arguments(value: Any) -> dict[str, Any]:

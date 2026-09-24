@@ -209,7 +209,7 @@ class OllamaUniversityAgentTests(unittest.TestCase):
             ]
         )
 
-        agent.run("¿Dónde hablan mis apuntes de memoria caché?", now=self.now)
+        agent.run("Busca memoria caché", now=self.now)
 
         search.assert_called_once_with(
             self.source,
@@ -324,8 +324,46 @@ class OllamaUniversityAgentTests(unittest.TestCase):
 
         self.assertEqual(len(client.calls), 2)
 
+    @patch("university_agent.agent_tools.search_materials")
+    def test_explicit_material_query_is_presearched_and_cited(self, search):
+        passage = MaterialPassage(
+            course_name="Fictional Systems",
+            relative_path="notes.txt",
+            page_number=None,
+            text="Fictional cache explanation",
+            score=1.5,
+        )
+        search.return_value = [passage]
+        query = "Busca en mis materiales información sobre caché"
+        agent, client = self.make_agent(
+            [final_response("Respuesta sin cita del modelo.")]
+        )
+
+        answer = agent.run(query, now=self.now)
+
+        search.assert_called_once_with(
+            self.source,
+            query=query,
+            course_name=None,
+            limit=10,
+            max_chunk_chars=2000,
+        )
+        messages = client.calls[0]["messages"]
+        self.assertEqual(messages[1], {"role": "user", "content": query})
+        self.assertEqual(
+            messages[2]["tool_calls"][0]["function"]["name"],
+            "search_local_materials",
+        )
+        self.assertEqual(messages[3]["tool_name"], "search_local_materials")
+        self.assertTrue(answer.startswith("Respuesta sin cita del modelo."))
+        self.assertEqual(
+            answer.count("Fictional Systems / notes.txt"),
+            1,
+        )
+        self.assertNotIn(", p.", answer)
+
     def test_spanish_query_is_preserved_exactly(self):
-        query = "¿Dónde hablan mis apuntes de memoria caché?"
+        query = "¿Dónde se explica memoria caché?"
         agent, client = self.make_agent([final_response("Respuesta")])
 
         agent.run(query, now=self.now)
