@@ -4,16 +4,17 @@
 
 ## Overview
 
-University Agent is a Python project for building an AI-assisted university
-workflow. The current implementation deliberately establishes reliable,
-read-only data access and deterministic processing before adding an AI layer.
+University Agent is a Python project for an AI-assisted university workflow.
+The current implementation combines reliable read-only data access and
+deterministic processing with one host-controlled OpenAI Responses API agent.
 
 Today, the project reads Gmail metadata, parses supported academic email
 subjects, detects upcoming deadlines, and retrieves recent notices explicitly
 associated with a course code. It also discovers user-managed course directories
 and material files from an explicitly configured local filesystem root, with
 deterministic text extraction, chunking, and lexical retrieval for TXT and PDF
-files. It does not currently implement an AI agent or connect to Moodle.
+files. The agent can select three narrow academic operations and generate a
+grounded response; it does not connect to Moodle.
 
 ## Implemented functionality
 
@@ -103,10 +104,10 @@ for one exact local course name or all discovered courses. Unsupported formats
 are skipped in this batch workflow, while corrupt supported TXT or PDF files
 still raise an extraction error.
 
-### Agent-ready application operations
+### Agent-facing application operations
 
-`academic_operations.py` exposes three narrow deterministic operations designed
-to be bound to a future agent runtime:
+`academic_operations.py` exposes three narrow deterministic operations used by
+the OpenAI runtime:
 
 - `get_deadlines()` returns titles and due times within explicit `now` and
   `until` bounds.
@@ -117,14 +118,31 @@ to be bound to a future agent runtime:
 
 The Gmail connector and local-material source are supplied by the application
 host. Results intentionally omit Gmail message/thread identifiers, raw email
-subjects, and absolute filesystem paths. These are application operations for a
-future agent; no AI agent or tool-calling runtime is implemented.
+subjects, and absolute filesystem paths.
+
+### OpenAI Responses agent
+
+`UniversityAgent` implements a bounded OpenAI Responses API function-calling
+loop. It exposes exactly three strict tools: remaining-week deadlines, recent
+course notices, and lexical local-material search. The host injects Gmail and
+local-material dependencies, trusted time, timezone, model, and resource caps.
+
+The default model is `gpt-6-luna` and can be replaced at construction time.
+Responses use `store=False`; tool calls are limited to four rounds by default.
+Provider and internal operation failures cross the public boundary only as
+sanitized host exceptions.
 
 ## Architecture
 
 ```text
-                        future agent (not implemented)
-                                    |
+                               User
+                                 |
+                                 v
+                UniversityAgent / OpenAI Responses API
+                    (strict tools, bounded loop)
+                                 |
+                  host time, timezone, limits
+                                 |
                          academic_operations.py
                            /        |         \
                           /         |          \
@@ -150,26 +168,30 @@ depend on Gmail.
 
 | Example question | Status | Current boundary |
 | --- | --- | --- |
-| “¿Qué entregas tengo esta semana?” | Partially supported | Detected Gmail deadlines can be bounded by explicit `now` and `until`; calendar interpretation and completeness are not provided. |
-| “¿Hay avisos recientes de EI0001?” | Supported within limits | Requires an exact supported course code and academic year; only recognized course-prefixed Gmail subjects are returned. |
+| “¿Qué entregas tengo esta semana?” | Supported within limits | The host resolves the remaining ISO week; results include only deadlines detected from supported Gmail subjects and are not authoritative. |
+| “¿Hay avisos recientes de EI0001?” | Partially supported | Requires an exact supported course code and academic year; the agent must clarify a missing year rather than guess. |
 | “¿Dónde hablan mis apuntes de memoria caché?” | Supported within limits | Lexically searches supported local TXT and embedded-text PDF materials and returns relative source provenance. |
-| “Explícame memoria caché usando mis apuntes.” | Partially supported | Relevant passages can be retrieved, but answer generation is not implemented. |
+| “Explícame memoria caché usando mis apuntes.” | Supported within limits | The agent can generate an explanation grounded in lexically retrieved passages and should cite their relative provenance. |
 | “¿Qué asignaturas tengo?” | Partially supported | User-managed local directory names can be listed; authoritative enrollment is unavailable. |
 | “¿Qué ha cambiado hoy en Moodle?” | Not yet supported | Moodle is not integrated. |
 | “¿He entregado esta práctica?” | Not yet supported | Gmail subject evidence is not an authoritative submission-state source. |
 
-Natural-language interpretation, ambiguity resolution, and presentation remain
-future agent responsibilities. Parsing, bounds validation, filesystem safety,
-text extraction, chunking, and lexical ranking remain deterministic code.
+Natural-language interpretation, tool selection, and presentation belong to the
+agent. Parsing, trusted time, bounds validation, filesystem safety, extraction,
+chunking, and lexical ranking remain deterministic code.
 
-## Future LLM integration boundary
+## LLM integration boundary
 
-The recommended first runtime is the OpenAI Responses API with strict function
-calling, but no OpenAI SDK or LLM adapter is implemented yet. Provider-specific
-schemas should be introduced together with that runtime rather than duplicated
-now as generic metadata.
+The implemented runtime uses the official OpenAI Python SDK and Responses API
+with three strict function schemas:
 
-The future model may select an operation and supply semantic inputs such as an
+- `get_remaining_week_deadlines` accepts no model-controlled arguments.
+- `get_recent_course_notices` accepts `course_code`, `academic_year`, and an
+  optional bounded `lookback_days` value.
+- `search_local_materials` accepts `query`, an optional exact `course_name`, and
+  an optional bounded result `limit`.
+
+The model may select an operation and supply semantic inputs such as an
 exact course code/year, a material query, or an optional exact local course
 name. The application host must inject and control:
 
@@ -185,8 +207,8 @@ through Sunday 23:59:59.999999. It uses an ISO Monday–Sunday week, never reads
 the system clock, and produces bounds compatible with the current deadline
 parser. The host—not Gmail or the model—chooses the timezone.
 
-For a query such as “¿Qué tengo pendiente esta semana?”, the model should select
-the deadline operation, the host should resolve and validate the week bounds,
+For a query such as “¿Qué tengo pendiente esta semana?”, the model selects
+the deadline operation, the host resolves and validates the week bounds,
 and `get_deadlines()` should return only narrowed deadline fields. The final
 answer must describe these as deadlines detected from supported Gmail subject
 formats, not as a complete authoritative task list.
@@ -205,9 +227,9 @@ details, credentials, paths, and connector state must not be sent to the model.
 
 - Python 3.12 or newer
 
-Runtime dependencies are declared in `pyproject.toml` and are limited to the
-Google libraries required for Gmail OAuth and API access plus `pypdf` for
-embedded PDF text extraction.
+Runtime dependencies are declared in `pyproject.toml`: the Google libraries
+required for Gmail OAuth/API access, `pypdf` for embedded PDF text extraction,
+and the official `openai` Python SDK.
 
 ## Installation
 
@@ -223,6 +245,18 @@ Install the package in editable mode:
 ```bash
 python -m pip install -e .
 ```
+
+## OpenAI setup
+
+Create an API key in the OpenAI dashboard and expose it only through the local
+environment. The official SDK reads `OPENAI_API_KEY` automatically:
+
+```bash
+export OPENAI_API_KEY="replace-with-your-local-key"
+```
+
+Do not place the key in source code, the repository, command arguments, or
+committed environment files. OpenAI API usage may incur provider charges.
 
 ## Gmail OAuth setup
 
@@ -338,10 +372,10 @@ results = search_local_materials(
 Omit `course_name` to search every discovered course. Course matching is exact.
 This is local lexical search, not semantic search or RAG.
 
-### Agent-ready operations
+### Agent-facing operations
 
 Application hosts can compose the narrow result models without exposing broad
-connector capabilities to a future agent runtime:
+connector capabilities to the model:
 
 ```python
 from datetime import datetime
@@ -365,8 +399,24 @@ passages = search_materials(
 ```
 
 The caller is responsible for injecting authenticated/local dependencies and
-explicit time bounds. These functions return structured values and do not
-print, persist, summarize, or invoke an AI model.
+explicit time bounds. These deterministic functions return structured values
+and do not themselves print, persist, summarize, or invoke a model.
+
+### OpenAI agent demo
+
+Run one natural-language query with an explicit user-managed materials root and
+IANA timezone:
+
+```bash
+python scripts/agent_demo.py \
+  --materials-root /path/to/university-materials \
+  --timezone Europe/Madrid \
+  "¿Dónde hablan mis apuntes de memoria caché?"
+```
+
+Omit the final query to enter it interactively, which avoids placing it in shell
+history. The script prints only the final answer. Gmail authentication remains
+lazy and is used only if the model selects a Gmail-backed operation.
 
 ### Manual OAuth demo
 
@@ -388,10 +438,10 @@ Run the isolated unit-test suite from the repository root after installation:
 python -m unittest discover -s tests
 ```
 
-The current suite contains 168 tests. Pure parsers are tested directly, while
+The current suite contains 186 tests. Pure parsers are tested directly, while
 Gmail-dependent behavior uses injected or mocked services and connectors. The
-tests do not require live Gmail access, OAuth credentials, tokens, or network
-access.
+OpenAI adapter uses a fake injected client. Tests do not require live Gmail,
+OpenAI access, OAuth credentials, API keys, tokens, or network access.
 
 ## Project structure
 
@@ -401,6 +451,7 @@ access.
 ├── README.md
 ├── pyproject.toml
 ├── scripts/
+│   ├── agent_demo.py
 │   └── gmail_demo.py
 ├── src/
 │   └── university_agent/
@@ -413,6 +464,7 @@ access.
 │       ├── material_chunks.py
 │       ├── material_search.py
 │       ├── material_text.py
+│       ├── openai_agent.py
 │       ├── recent_course_notices.py
 │       ├── time_windows.py
 │       ├── upcoming_deadlines.py
@@ -429,6 +481,7 @@ access.
     ├── test_material_chunks.py
     ├── test_material_search.py
     ├── test_material_text.py
+    ├── test_openai_agent.py
     ├── test_recent_course_notices.py
     ├── test_time_windows.py
     └── test_upcoming_deadlines.py
@@ -442,22 +495,31 @@ access.
   directory.
 - Mailbox metadata, snippets, diagnostic output, and demo output may contain
   private information and must not be committed or published.
-- Local material contents and extracted search results remain private user data;
-  do not publish them in logs, fixtures, issues, or commits.
+- Local material contents remain private until selected passages are used by
+  the agent. Those retrieved passages and their relative provenance are sent to
+  OpenAI when needed for a generated answer; do not use the agent with material
+  that must never leave the local machine.
+- Retrieved document text is treated as untrusted data, not as instructions for
+  the model or permission to change tool policy.
+- The agent uses `store=False`, bounded strict tools, host-controlled limits,
+  and sanitized public errors. Provider-side retention and data controls still
+  depend on the configured OpenAI account and current provider policy.
 - Credentials, client secrets, access tokens, and refresh tokens must never be
   included in source code, documentation, issues, or logs.
 
 ## Current limitations
 
-- Gmail is the only implemented network data source; Moodle is not integrated.
+- Gmail and OpenAI are the implemented network services; Moodle is not
+  integrated.
 - Material text extraction supports only UTF-8 TXT and embedded PDF text.
 - Scanned or image-only PDFs, OCR, DOCX, and PPTX are not supported.
 - Large or unusually complex PDFs may require substantial memory.
-- No AI agent, LLM tool-calling runtime, course-name resolution, database, or
-  persistence is implemented.
+- The agent supports one provider only: OpenAI Responses API. No conversation
+  persistence, provider abstraction, or authoritative course-name resolution
+  is implemented.
 - Search is lexical only: it does not infer synonyms or semantic similarity.
-- No embeddings, vector database, RAG, LLM, or document summarization is
-  implemented.
+- No embeddings, vector database, semantic retrieval, or persistent RAG index
+  is implemented. Generated explanations use only selected lexical passages.
 - Message bodies, MIME parts, and attachments are not processed.
 - Gmail result pagination is not implemented.
 - Deterministic parsers support only observed subject formats.
@@ -468,8 +530,9 @@ access.
 
 The following items are future work and are not currently implemented:
 
-1. Bind the narrow application operations to an LLM runtime with host-managed
-   dependencies, time policy, and credential boundaries.
+1. Evaluate the three natural-language flows with fictional data and a locally
+   configured API key, then add regression cases for observed tool-selection
+   failures.
 2. Add DOCX or PPTX text extraction only if real local materials justify it.
 3. Consider Moodle as an optional authoritative source only if an officially
    supported integration is authorized and verified.
