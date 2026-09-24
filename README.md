@@ -72,8 +72,10 @@ headers are ordered newest first; missing or unusable dates are placed last.
 `LocalMaterialsSource` discovers course directories and material files beneath
 an explicitly supplied filesystem root. The root is user-managed and must live
 outside this repository. Immediate visible directories are treated as course
-names, and visible, non-symlinked files are discovered recursively within an
-exact course directory.
+names, and visible, non-symlinked files are discovered recursively within a
+selected course directory. Course lookup normalizes Unicode, trims surrounding
+whitespace, and compares case-insensitively while preserving the actual
+directory name in returned provenance. Ambiguous normalized matches fail.
 
 Discovery itself returns filesystem metadata only. Document contents remain
 local and are read only when explicitly passed to the text-extraction operation.
@@ -101,9 +103,9 @@ occurrences, with deterministic provenance-based tie breaking. Accents are
 preserved; no stemming, translation, embeddings, or semantic matching occurs.
 
 `search_local_materials()` composes discovery, extraction, chunking, and search
-for one exact local course name or all discovered courses. Unsupported formats
-are skipped in this batch workflow, while corrupt supported TXT or PDF files
-still raise an extraction error.
+for one normalized local course name or all discovered courses. Unsupported
+formats are skipped in this batch workflow, while corrupt supported TXT or
+PDF files still raise an extraction error.
 
 ### Agent-facing application operations
 
@@ -132,6 +134,14 @@ The default local model is `qwen3:14b`, the exact tool-capable tag validated for
 this project. Local inference has no per-request API charge, but consumes local
 CPU/GPU, RAM, storage, and energy. Provider, internal-operation, and tool-round
 failures cross the public boundary only as sanitized exceptions.
+
+Both agent adapters deterministically run local lexical retrieval before the
+model when a query explicitly refers to the user’s notes or materials using
+the supported Spanish, Valencian, or English possessive wording. The host
+appends a stable `Fuentes consultadas` list built from the actual tool results,
+using only the course name, relative path, and real PDF page when available.
+These references identify retrieved passages; they are not sentence-level
+citation alignment. Generic questions retain normal model-directed tool choice.
 
 ### Optional OpenAI Responses agent
 
@@ -184,8 +194,8 @@ depend on Gmail.
 | --- | --- | --- |
 | “¿Qué entregas tengo esta semana?” | Supported within limits | The host resolves the remaining ISO week; results include only deadlines detected from supported Gmail subjects and are not authoritative. |
 | “¿Hay avisos recientes de EI0001?” | Partially supported | Requires an exact supported course code and academic year; the agent must clarify a missing year rather than guess. |
-| “¿Dónde hablan mis apuntes de memoria caché?” | Supported within limits | Lexically searches supported local TXT and embedded-text PDF materials and returns relative source provenance. |
-| “Explícame memoria caché usando mis apuntes.” | Supported within limits | The agent can generate an explanation grounded in lexically retrieved passages and should cite their relative provenance. |
+| “¿Dónde hablan mis apuntes de memoria caché?” | Supported within limits | Explicit references to the user’s notes force lexical retrieval from supported local TXT and embedded-text PDF materials; the host appends relative source provenance. |
+| “Explícame memoria caché usando mis apuntes.” | Supported within limits | Explicit references to the user’s notes force retrieval before generation, and the host appends the sources actually consulted. |
 | “¿Qué asignaturas tengo?” | Partially supported | User-managed local directory names can be listed; authoritative enrollment is unavailable. |
 | “¿Qué ha cambiado hoy en Moodle?” | Not yet supported | Moodle is not integrated. |
 | “¿He entregado esta práctica?” | Not yet supported | Gmail subject evidence is not an authoritative submission-state source. |
@@ -203,12 +213,17 @@ schemas additionally use the provider's strict-tool mode:
 - `get_remaining_week_deadlines` accepts no model-controlled arguments.
 - `get_recent_course_notices` accepts `course_code`, `academic_year`, and an
   optional bounded `lookback_days` value.
-- `search_local_materials` accepts `query`, an optional exact `course_name`, and
-  an optional bounded result `limit`.
+- `search_local_materials` accepts `query`, an optional normalized
+  `course_name`, and an optional bounded result `limit`.
+
+For explicit user-note or user-material queries in supported wording, the host
+pre-executes `search_local_materials` with the original query before model
+generation. This prevents either provider from silently answering without local
+retrieval. Other queries retain model-directed tool selection.
 
 The model may select an operation and supply semantic inputs such as an
-exact course code/year, a material query, or an optional exact local course
-name. The application host must inject and control:
+exact course code/year, a material query, or an optional normalized local
+course name. The application host must inject and control:
 
 - `GmailConnector` and `LocalMaterialsSource`
 - credentials, local roots, and trusted current time
@@ -416,8 +431,11 @@ results = search_local_materials(
 )
 ```
 
-Omit `course_name` to search every discovered course. Course matching is exact.
-This is local lexical search, not semantic search or RAG.
+Omit `course_name` to search every discovered course. Supplied course names are
+matched after NFC normalization, surrounding-whitespace trimming, and
+case-insensitive comparison. Returned provenance preserves the real directory
+name. Ambiguous normalized matches raise an error. This is local lexical search,
+not semantic search or RAG.
 
 ### Agent-facing operations
 
@@ -489,6 +507,10 @@ Omit the final query to enter it interactively, which avoids placing it in shell
 history. The script prints only the final answer. Gmail authentication remains
 lazy and is used only if the model selects a Gmail-backed operation.
 
+For the supported explicit references to the user’s notes or materials, both
+providers run local retrieval first and append a deterministic relative source
+list to the final answer. Generic questions do not force material retrieval.
+
 ### Manual OAuth demo
 
 Run:
@@ -548,11 +570,15 @@ or network access.
 └── tests/
     ├── test_agent_demo.py
     ├── test_agent_instructions.py
+    ├── test_agent_grounding.py
     ├── test_agent_lexical_instruction.py
     ├── test_academic_operations.py
     ├── test_academic_notifications.py
+    ├── test_course_name_hygiene.py
     ├── test_course_notices.py
     ├── test_gmail.py
+    ├── test_local_material_exclusions.py
+    ├── test_local_material_search_performance.py
     ├── test_local_material_search.py
     ├── test_local_materials.py
     ├── test_material_chunks.py
@@ -601,6 +627,9 @@ or network access.
 - No embeddings, vector database, semantic retrieval, or persistent RAG index
   is implemented. Generated explanations use only selected lexical passages.
 - Message bodies, MIME parts, and attachments are not processed.
+- Deterministic source lists identify retrieved documents and PDF pages, but do
+  not align individual generated claims with individual passages.
+- Automatic material routing is limited to documented explicit possessive cues.
 - Gmail result pagination is not implemented.
 - Deterministic parsers support only observed subject formats.
 - Course-notice text is not semantically classified.
