@@ -93,7 +93,7 @@ class UniversityAgentTests(unittest.TestCase):
 
         self.assertEqual(answer, "Respuesta ficticia")
         request = client.responses.calls[0]
-        self.assertEqual(request["model"], "gpt-6-luna")
+        self.assertEqual(request["model"], "gpt-5.6-luna")
         self.assertEqual(request["input"], [{"role": "user", "content": "Hola"}])
         self.assertIs(request["store"], False)
         self.assertIs(request["parallel_tool_calls"], True)

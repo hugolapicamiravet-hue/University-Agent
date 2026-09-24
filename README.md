@@ -127,7 +127,7 @@ loop. It exposes exactly three strict tools: remaining-week deadlines, recent
 course notices, and lexical local-material search. The host injects Gmail and
 local-material dependencies, trusted time, timezone, model, and resource caps.
 
-The default model is `gpt-6-luna` and can be replaced at construction time.
+The default model is `gpt-5.6-luna` and can be replaced at construction time.
 Responses use `store=False`; tool calls are limited to four rounds by default.
 Provider and internal operation failures cross the public boundary only as
 sanitized host exceptions.

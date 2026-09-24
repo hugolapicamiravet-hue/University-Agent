@@ -16,7 +16,7 @@ def main() -> int:
     parser = argparse.ArgumentParser(description="Run one University Agent query")
     parser.add_argument("--materials-root", required=True, type=Path)
     parser.add_argument("--timezone", required=True)
-    parser.add_argument("--model", default="gpt-6-luna")
+    parser.add_argument("--model", default="gpt-5.6-luna")
     parser.add_argument("query", nargs="*")
     arguments = parser.parse_args()
 

@@ -65,7 +65,7 @@ class UniversityAgent:
         connector: GmailConnector,
         materials_source: LocalMaterialsSource,
         timezone_name: str,
-        model: str = "gpt-6-luna",
+        model: str = "gpt-5.6-luna",
         max_gmail_results: int = 100,
         max_lookback_days: int = 120,
         max_material_results: int = 10,
