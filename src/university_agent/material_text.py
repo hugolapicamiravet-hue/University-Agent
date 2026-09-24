@@ -42,12 +42,17 @@ def extract_text(
 ) -> ExtractedDocument:
     """Extract text from a material currently discoverable in ``source``."""
     discovered_material = _rediscover_material(source, material)
-    material_format = discovered_material.path.suffix.casefold()
+    return _extract_discovered_text(discovered_material)
+
+
+def _extract_discovered_text(material: LocalMaterial) -> ExtractedDocument:
+    """Extract a material returned directly by LocalMaterialsSource."""
+    material_format = material.path.suffix.casefold()
 
     if material_format == ".txt":
-        return _extract_txt(discovered_material)
+        return _extract_txt(material)
     if material_format == ".pdf":
-        return _extract_pdf(discovered_material)
+        return _extract_pdf(material)
 
     display_format = material_format or "<none>"
     raise UnsupportedMaterialFormatError(

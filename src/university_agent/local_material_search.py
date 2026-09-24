@@ -7,7 +7,7 @@ from university_agent.material_chunks import MaterialChunk, chunk_document
 from university_agent.material_search import MaterialSearchResult, search_chunks
 from university_agent.material_text import (
     UnsupportedMaterialFormatError,
-    extract_text,
+    _extract_discovered_text,
 )
 
 
@@ -37,7 +37,7 @@ def search_local_materials(
     for course in courses:
         for material in source.list_materials(course.name):
             try:
-                document = extract_text(source, material)
+                document = _extract_discovered_text(material)
             except UnsupportedMaterialFormatError:
                 continue
             chunks.extend(
