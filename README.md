@@ -6,7 +6,8 @@
 
 University Agent is a Python project for an AI-assisted university workflow.
 The current implementation combines reliable read-only data access and
-deterministic processing with one host-controlled OpenAI Responses API agent.
+deterministic processing with a local-first Ollama agent and an optional OpenAI
+Responses API agent.
 
 Today, the project reads Gmail metadata, parses supported academic email
 subjects, detects upcoming deadlines, and retrieves recent notices explicitly
@@ -14,7 +15,7 @@ associated with a course code. It also discovers user-managed course directories
 and material files from an explicitly configured local filesystem root, with
 deterministic text extraction, chunking, and lexical retrieval for TXT and PDF
 files. The agent can select three narrow academic operations and generate a
-grounded response; it does not connect to Moodle.
+grounded response through either provider; it does not connect to Moodle.
 
 ## Implemented functionality
 
@@ -107,7 +108,7 @@ still raise an extraction error.
 ### Agent-facing application operations
 
 `academic_operations.py` exposes three narrow deterministic operations used by
-the OpenAI runtime:
+the agent runtimes:
 
 - `get_deadlines()` returns titles and due times within explicit `now` and
   `until` bounds.
@@ -120,7 +121,19 @@ The Gmail connector and local-material source are supplied by the application
 host. Results intentionally omit Gmail message/thread identifiers, raw email
 subjects, and absolute filesystem paths.
 
-### OpenAI Responses agent
+### Local Ollama agent
+
+`OllamaUniversityAgent` implements a bounded chat/tool-calling loop against a
+locally running Ollama server. It exposes the same three narrow operations as
+the OpenAI adapter while keeping trusted time, timezone, connectors, local
+roots, and resource caps under host control.
+
+The default local model is `qwen3:14b`, the exact tool-capable tag validated for
+this project. Local inference has no per-request API charge, but consumes local
+CPU/GPU, RAM, storage, and energy. Provider, internal-operation, and tool-round
+failures cross the public boundary only as sanitized exceptions.
+
+### Optional OpenAI Responses agent
 
 `UniversityAgent` implements a bounded OpenAI Responses API function-calling
 loop. It exposes exactly three strict tools: remaining-week deadlines, recent
@@ -138,8 +151,9 @@ sanitized host exceptions.
                                User
                                  |
                                  v
-                UniversityAgent / OpenAI Responses API
-                    (strict tools, bounded loop)
+                OllamaUniversityAgent / local Ollama (default)
+                  or UniversityAgent / OpenAI
+                    (narrow tools, bounded loop)
                                  |
                   host time, timezone, limits
                                  |
@@ -182,8 +196,9 @@ chunking, and lexical ranking remain deterministic code.
 
 ## LLM integration boundary
 
-The implemented runtime uses the official OpenAI Python SDK and Responses API
-with three strict function schemas:
+The two implemented runtimes use the official Ollama and OpenAI Python clients.
+Both expose the same three narrow function schemas; the OpenAI Responses
+schemas additionally use the provider's strict-tool mode:
 
 - `get_remaining_week_deadlines` accepts no model-controlled arguments.
 - `get_recent_course_notices` accepts `course_code`, `academic_year`, and an
@@ -229,7 +244,7 @@ details, credentials, paths, and connector state must not be sent to the model.
 
 Runtime dependencies are declared in `pyproject.toml`: the Google libraries
 required for Gmail OAuth/API access, `pypdf` for embedded PDF text extraction,
-and the official `openai` Python SDK.
+and the official `ollama` and `openai` Python clients.
 
 ## Installation
 
@@ -246,7 +261,22 @@ Install the package in editable mode:
 python -m pip install -e .
 ```
 
-## OpenAI setup
+## Ollama setup
+
+The primary inference path requires Ollama running locally and the default
+model available under its exact tag:
+
+```bash
+ollama list
+ollama pull qwen3:14b  # only if the model is not already installed
+```
+
+The Ollama application normally provides the local server at
+`http://127.0.0.1:11434`. Standard local-model inference remains on the machine
+and requires no API key. Cloud-tagged models and remotely configured Ollama
+hosts have different privacy boundaries and are not the documented default.
+
+## Optional OpenAI setup
 
 Create an API key in the OpenAI dashboard and expose it only through the local
 environment. The official SDK reads `OPENAI_API_KEY` automatically:
@@ -402,13 +432,27 @@ The caller is responsible for injecting authenticated/local dependencies and
 explicit time bounds. These deterministic functions return structured values
 and do not themselves print, persist, summarize, or invoke a model.
 
-### OpenAI agent demo
+### Agent demo
 
-Run one natural-language query with an explicit user-managed materials root and
-IANA timezone:
+Run one natural-language query through local Ollama with an explicit
+user-managed materials root and IANA timezone:
 
 ```bash
 python scripts/agent_demo.py \
+  --provider ollama \
+  --materials-root /path/to/university-materials \
+  --timezone Europe/Madrid \
+  "¿Dónde hablan mis apuntes de memoria caché?"
+```
+
+Ollama is the default, so `--provider ollama` may be omitted. Override the
+local model with `--model` only when that exact tag is already available.
+
+Use the optional OpenAI adapter explicitly:
+
+```bash
+python scripts/agent_demo.py \
+  --provider openai \
   --materials-root /path/to/university-materials \
   --timezone Europe/Madrid \
   "¿Dónde hablan mis apuntes de memoria caché?"
@@ -438,10 +482,11 @@ Run the isolated unit-test suite from the repository root after installation:
 python -m unittest discover -s tests
 ```
 
-The current suite contains 186 tests. Pure parsers are tested directly, while
+The current suite contains 205 tests. Pure parsers are tested directly, while
 Gmail-dependent behavior uses injected or mocked services and connectors. The
-OpenAI adapter uses a fake injected client. Tests do not require live Gmail,
-OpenAI access, OAuth credentials, API keys, tokens, or network access.
+Ollama and OpenAI adapters use fake injected clients. Tests do not require a
+live Ollama server, Gmail, OpenAI access, OAuth credentials, API keys, tokens,
+or network access.
 
 ## Project structure
 
@@ -456,6 +501,7 @@ OpenAI access, OAuth credentials, API keys, tokens, or network access.
 ├── src/
 │   └── university_agent/
 │       ├── __init__.py
+│       ├── agent_tools.py
 │       ├── academic_operations.py
 │       ├── academic_notifications.py
 │       ├── course_notices.py
@@ -464,6 +510,7 @@ OpenAI access, OAuth credentials, API keys, tokens, or network access.
 │       ├── material_chunks.py
 │       ├── material_search.py
 │       ├── material_text.py
+│       ├── ollama_agent.py
 │       ├── openai_agent.py
 │       ├── recent_course_notices.py
 │       ├── time_windows.py
@@ -472,6 +519,9 @@ OpenAI access, OAuth credentials, API keys, tokens, or network access.
 │           ├── __init__.py
 │           └── gmail.py
 └── tests/
+    ├── test_agent_demo.py
+    ├── test_agent_instructions.py
+    ├── test_agent_lexical_instruction.py
     ├── test_academic_operations.py
     ├── test_academic_notifications.py
     ├── test_course_notices.py
@@ -481,6 +531,7 @@ OpenAI access, OAuth credentials, API keys, tokens, or network access.
     ├── test_material_chunks.py
     ├── test_material_search.py
     ├── test_material_text.py
+    ├── test_ollama_agent.py
     ├── test_openai_agent.py
     ├── test_recent_course_notices.py
     ├── test_time_windows.py
@@ -495,10 +546,12 @@ OpenAI access, OAuth credentials, API keys, tokens, or network access.
   directory.
 - Mailbox metadata, snippets, diagnostic output, and demo output may contain
   private information and must not be committed or published.
-- Local material contents remain private until selected passages are used by
-  the agent. Those retrieved passages and their relative provenance are sent to
-  OpenAI when needed for a generated answer; do not use the agent with material
-  that must never leave the local machine.
+- With the documented local Ollama setup, selected passages and inference stay
+  on the machine. Local compute and storage are still consumed, and a remotely
+  configured Ollama host changes this boundary.
+- When the OpenAI provider is selected, retrieved passages and their relative
+  provenance are sent to OpenAI to generate the answer. Do not use that provider
+  with material that must never leave the local machine.
 - Retrieved document text is treated as untrusted data, not as instructions for
   the model or permission to change tool policy.
 - The agent uses `store=False`, bounded strict tools, host-controlled limits,
@@ -509,14 +562,14 @@ OpenAI access, OAuth credentials, API keys, tokens, or network access.
 
 ## Current limitations
 
-- Gmail and OpenAI are the implemented network services; Moodle is not
-  integrated.
+- Gmail and optional OpenAI are the implemented external network services.
+  Ollama is local by default; Moodle is not integrated.
 - Material text extraction supports only UTF-8 TXT and embedded PDF text.
 - Scanned or image-only PDFs, OCR, DOCX, and PPTX are not supported.
 - Large or unusually complex PDFs may require substantial memory.
-- The agent supports one provider only: OpenAI Responses API. No conversation
-  persistence, provider abstraction, or authoritative course-name resolution
-  is implemented.
+- The agent supports local Ollama and optional OpenAI adapters. There is no
+  conversation persistence, provider registry, or authoritative course-name
+  resolution.
 - Search is lexical only: it does not infer synonyms or semantic similarity.
 - No embeddings, vector database, semantic retrieval, or persistent RAG index
   is implemented. Generated explanations use only selected lexical passages.
@@ -530,9 +583,8 @@ OpenAI access, OAuth credentials, API keys, tokens, or network access.
 
 The following items are future work and are not currently implemented:
 
-1. Evaluate the three natural-language flows with fictional data and a locally
-   configured API key, then add regression cases for observed tool-selection
-   failures.
+1. Evaluate local retrieval against a small opt-in set of real user materials
+   without committing or logging their contents.
 2. Add DOCX or PPTX text extraction only if real local materials justify it.
 3. Consider Moodle as an optional authoritative source only if an officially
    supported integration is authorized and verified.
