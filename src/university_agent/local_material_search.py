@@ -24,18 +24,15 @@ def search_local_materials(
     if max_chunk_chars < 100:
         raise ValueError("max_chunk_chars must be at least 100")
 
-    courses = source.list_courses()
-    if course_name is not None:
-        matching_courses = [
-            course for course in courses if course.name == course_name
-        ]
-        if not matching_courses:
-            raise ValueError("unknown course")
-        courses = matching_courses
+    course_names = (
+        [course.name for course in source.list_courses()]
+        if course_name is None
+        else [course_name]
+    )
 
     chunks: list[MaterialChunk] = []
-    for course in courses:
-        for material in source.list_materials(course.name):
+    for selected_course in course_names:
+        for material in source.list_materials(selected_course):
             try:
                 document = _extract_discovered_text(material)
             except UnsupportedMaterialFormatError:

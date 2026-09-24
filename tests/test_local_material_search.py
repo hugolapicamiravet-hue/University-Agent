@@ -165,15 +165,17 @@ class LocalMaterialSearchTests(unittest.TestCase):
             with self.assertRaises(MaterialTextExtractionError):
                 search_local_materials(self.source, query="fictional")
 
-    def test_course_name_matching_is_exact(self):
+    def test_course_name_matching_is_normalized(self):
         self.create_text(self.alpha, "notes.txt", "fictional text")
 
-        with self.assertRaisesRegex(ValueError, "unknown course"):
-            search_local_materials(
-                self.source,
-                query="fictional",
-                course_name="fictional course alpha",
-            )
+        results = search_local_materials(
+            self.source,
+            query="fictional",
+            course_name="fictional course alpha",
+        )
+
+        self.assertEqual(len(results), 1)
+        self.assertEqual(results[0].chunk.course_name, "Fictional Course Alpha")
 
     def test_unknown_course_is_rejected(self):
         with self.assertRaisesRegex(ValueError, "unknown course"):

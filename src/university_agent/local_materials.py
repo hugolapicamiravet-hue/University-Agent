@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import unicodedata
 from collections.abc import Iterable
 from dataclasses import dataclass
 from pathlib import Path
@@ -60,13 +61,18 @@ class LocalMaterialsSource:
         return sorted(courses, key=lambda course: course.name)
 
     def list_materials(self, course: str) -> list[LocalMaterial]:
-        """Return visible files recursively for an exact discovered course name."""
-        courses_by_name = {
-            discovered.name: discovered for discovered in self.list_courses()
-        }
-        discovered_course = courses_by_name.get(course)
-        if discovered_course is None:
+        """Return files for one unambiguous normalized course lookup."""
+        lookup_key = _course_lookup_key(course)
+        matching_courses = [
+            discovered
+            for discovered in self.list_courses()
+            if _course_lookup_key(discovered.name) == lookup_key
+        ]
+        if not matching_courses:
             raise ValueError("unknown course")
+        if len(matching_courses) > 1:
+            raise ValueError("ambiguous course")
+        discovered_course = matching_courses[0]
 
         materials: list[LocalMaterial] = []
         directories = [discovered_course.path]
@@ -107,3 +113,7 @@ def _validate_excluded_relative_path(value: str | Path) -> Path:
             "excluded paths must be non-empty relative paths without parent traversal"
         )
     return path
+
+
+def _course_lookup_key(value: str) -> str:
+    return unicodedata.normalize("NFC", value).strip().casefold()
