@@ -107,6 +107,12 @@ for one normalized local course name or all discovered courses. Unsupported
 formats are skipped in this batch workflow, while corrupt supported TXT or
 PDF files still raise an extraction error.
 
+Agent runtimes own a bounded process-local `LocalMaterialCache` that reuses
+extracted documents while their filesystem metadata remains unchanged. Chunks
+are rebuilt for every requested character limit and ranking remains dynamic.
+The cache is neither a persistent index nor a database and disappears when the
+process exits.
+
 ### Agent-facing application operations
 
 `academic_operations.py` exposes three narrow deterministic operations used by
@@ -423,15 +429,18 @@ To search supported materials directly:
 ```python
 from pathlib import Path
 
+from university_agent.local_material_cache import LocalMaterialCache
 from university_agent.local_material_search import search_local_materials
 from university_agent.local_materials import LocalMaterialsSource
 
 source = LocalMaterialsSource(Path("/path/to/university-materials"))
+cache = LocalMaterialCache()
 results = search_local_materials(
     source,
     query="distributed systems",
     course_name="Fictional Course Alpha",
     limit=5,
+    cache=cache,
 )
 ```
 
@@ -439,7 +448,8 @@ Omit `course_name` to search every discovered course. Supplied course names are
 matched after NFC normalization, surrounding-whitespace trimming, and
 case-insensitive comparison. Returned provenance preserves the real directory
 name. Ambiguous normalized matches raise an error. This is local lexical search,
-not semantic search or RAG.
+not semantic search or RAG. Reuse the same cache for repeated searches in one
+process; call `cache.clear()` to discard its extracted documents explicitly.
 
 ### Agent-facing operations
 
@@ -574,6 +584,7 @@ access, OAuth credentials, API keys, tokens, or network access.
 │       ├── academic_operations.py
 │       ├── academic_notifications.py
 │       ├── course_notices.py
+│       ├── local_material_cache.py
 │       ├── local_material_search.py
 │       ├── local_materials.py
 │       ├── material_chunks.py
@@ -598,6 +609,7 @@ access, OAuth credentials, API keys, tokens, or network access.
     ├── test_course_notices.py
     ├── test_gmail.py
     ├── test_local_material_exclusions.py
+    ├── test_local_material_cache.py
     ├── test_local_material_search_performance.py
     ├── test_local_material_search.py
     ├── test_local_materials.py
@@ -640,6 +652,10 @@ access, OAuth credentials, API keys, tokens, or network access.
 - Material text extraction supports only UTF-8 TXT and embedded PDF text.
 - Scanned or image-only PDFs, OCR, DOCX, and PPTX are not supported.
 - Large or unusually complex PDFs may require substantial memory.
+- The extraction cache is process-local, metadata-invalidated, and bounded to
+  256 documents by default with deterministic first-in-first-out eviction. It
+  does not persist between runs; cached extracted text also increases process
+  memory use.
 - The agent supports local Ollama and optional OpenAI adapters. There is no
   conversation persistence, provider registry, or authoritative course-name
   resolution.
@@ -659,11 +675,9 @@ access, OAuth credentials, API keys, tokens, or network access.
 
 The following items are future work and are not currently implemented:
 
-1. Consider an invalidated local extraction cache only if repeated searches
-   justify the additional state and lifecycle complexity.
-2. Add DOCX or PPTX text extraction only if real local materials justify it.
-3. Consider Moodle as an optional authoritative source only if an officially
+1. Add DOCX or PPTX text extraction only if real local materials justify it.
+2. Consider Moodle as an optional authoritative source only if an officially
    supported integration is authorized and verified.
-4. Evaluate semantic retrieval as a complement to the existing lexical search
+3. Evaluate semantic retrieval as a complement to the existing lexical search
    only when real queries demonstrate the need.
-5. Later consider state, automation, and a user-facing interface.
+4. Later consider state, automation, and a user-facing interface.

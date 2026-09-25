@@ -3,7 +3,7 @@
 import json
 import unittest
 from datetime import datetime, timezone
-from unittest.mock import Mock, patch
+from unittest.mock import ANY, Mock, patch
 
 from university_agent.academic_operations import (
     CourseNoticeResult,
@@ -263,6 +263,7 @@ class OllamaUniversityAgentTests(unittest.TestCase):
             course_name="Fictional Architecture",
             limit=3,
             max_chunk_chars=2000,
+            cache=ANY,
         )
         result = self.tool_payload(client)["results"][0]
         self.assertEqual(result["relative_path"], "unit-02/cache.pdf")
@@ -393,6 +394,7 @@ class OllamaUniversityAgentTests(unittest.TestCase):
             course_name=None,
             limit=10,
             max_chunk_chars=2000,
+            cache=ANY,
         )
         messages = client.calls[0]["messages"]
         self.assertEqual(messages[1], {"role": "user", "content": query})

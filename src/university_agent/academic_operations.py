@@ -7,6 +7,7 @@ from datetime import datetime
 from typing import cast
 
 from university_agent.connectors.gmail import GmailConnector
+from university_agent.local_material_cache import LocalMaterialCache
 from university_agent.local_material_search import search_local_materials
 from university_agent.local_materials import LocalMaterialsSource
 from university_agent.recent_course_notices import find_recent_course_notices
@@ -99,6 +100,7 @@ def search_materials(
     course_name: str | None = None,
     limit: int = 10,
     max_chunk_chars: int = 2000,
+    cache: LocalMaterialCache | None = None,
 ) -> list[MaterialPassage]:
     """Return narrowed lexical passages from supported local materials."""
     results = search_local_materials(
@@ -107,6 +109,7 @@ def search_materials(
         course_name=course_name,
         limit=limit,
         max_chunk_chars=max_chunk_chars,
+        cache=cache,
     )
     return [
         MaterialPassage(

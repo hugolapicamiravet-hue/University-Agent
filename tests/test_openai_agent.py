@@ -5,7 +5,7 @@ import unittest
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from types import SimpleNamespace
-from unittest.mock import Mock, patch
+from unittest.mock import ANY, Mock, patch
 
 from university_agent.academic_operations import (
     CourseNoticeResult,
@@ -237,6 +237,7 @@ class UniversityAgentTests(unittest.TestCase):
             course_name="Fictional Architecture",
             limit=3,
             max_chunk_chars=2000,
+            cache=ANY,
         )
         result = self.output_for(client)["results"][0]
         self.assertEqual(result["relative_path"], "unit-02/cache.pdf")
@@ -426,6 +427,7 @@ class UniversityAgentTests(unittest.TestCase):
             course_name=None,
             limit=10,
             max_chunk_chars=2000,
+            cache=ANY,
         )
         request_input = client.responses.calls[0]["input"]
         self.assertEqual(request_input[0], {"role": "user", "content": query})

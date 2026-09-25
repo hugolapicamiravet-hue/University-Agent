@@ -19,6 +19,7 @@ from university_agent.academic_operations import (
     search_materials,
 )
 from university_agent.connectors.gmail import GmailConnector
+from university_agent.local_material_cache import LocalMaterialCache
 from university_agent.local_materials import LocalMaterialsSource
 from university_agent.time_windows import resolve_remaining_week_window
 
@@ -98,6 +99,7 @@ class AgentToolRuntime:
         self._max_lookback_days = max_lookback_days
         self._max_material_results = max_material_results
         self._max_chunk_chars = max_chunk_chars
+        self._material_cache = LocalMaterialCache()
 
     @property
     def definitions(self) -> list[dict[str, Any]]:
@@ -213,6 +215,7 @@ class AgentToolRuntime:
             course_name=course_name,
             limit=limit,
             max_chunk_chars=self._max_chunk_chars,
+            cache=self._material_cache,
         )
         return [_serialize_material_passage(result) for result in passages]
 
