@@ -8,6 +8,7 @@ from zoneinfo import ZoneInfo
 from ollama import Client as OllamaClient
 from openai import OpenAI
 
+from university_agent.agent_tools import is_explicit_material_query
 from university_agent.connectors.gmail import GmailConnector
 from university_agent.local_materials import LocalMaterialsSource
 from university_agent.ollama_agent import (
@@ -15,6 +16,19 @@ from university_agent.ollama_agent import (
     OllamaUniversityAgentError,
 )
 from university_agent.openai_agent import UniversityAgent, UniversityAgentError
+
+
+_OLLAMA_MATERIAL_MODEL = "llama3.2:3b"
+_OLLAMA_DEFAULT_MODEL = "qwen3:14b"
+
+
+def _select_ollama_model(query: str, override: str | None) -> str:
+    """Select the local model while preserving an explicit host override."""
+    if override is not None:
+        return override
+    if is_explicit_material_query(query):
+        return _OLLAMA_MATERIAL_MODEL
+    return _OLLAMA_DEFAULT_MODEL
 
 
 def main() -> int:
@@ -53,7 +67,7 @@ def main() -> int:
     if arguments.provider == "ollama":
         agent = OllamaUniversityAgent(
             client=OllamaClient(),
-            model=arguments.model or "qwen3:14b",
+            model=_select_ollama_model(query, arguments.model),
             **common,
         )
     else:

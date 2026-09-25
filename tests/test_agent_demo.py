@@ -7,6 +7,80 @@ from scripts import agent_demo
 
 
 class AgentDemoTests(unittest.TestCase):
+    def _selected_ollama_model(
+        self,
+        query: str,
+        *,
+        override: str | None = None,
+    ) -> str:
+        arguments = [
+            "agent_demo.py",
+            "--materials-root",
+            "/fictional/materials",
+            "--timezone",
+            "Europe/Madrid",
+        ]
+        if override is not None:
+            arguments.extend(("--model", override))
+        arguments.append(query)
+
+        with (
+            patch("scripts.agent_demo.LocalMaterialsSource"),
+            patch("scripts.agent_demo.GmailConnector"),
+            patch("scripts.agent_demo.OllamaClient"),
+            patch("scripts.agent_demo.OllamaUniversityAgent") as agent_type,
+            patch("sys.argv", arguments),
+            patch("builtins.print"),
+        ):
+            agent_type.return_value.run.return_value = "Local answer"
+            self.assertEqual(agent_demo.main(), 0)
+
+        return agent_type.call_args.kwargs["model"]
+
+    def test_explicit_material_queries_select_small_model(self):
+        queries = (
+            "¿Dónde hablan mis apuntes de memoria compartida?",
+            "Busca en mis materiales información sobre semáforos.",
+            "Busca-ho als meus apunts.",
+            "Explain this using my notes.",
+        )
+
+        for query in queries:
+            with self.subTest(query=query):
+                self.assertEqual(
+                    self._selected_ollama_model(query),
+                    "llama3.2:3b",
+                )
+
+    def test_other_queries_select_large_model(self):
+        queries = (
+            "¿Qué es una sección crítica?",
+            "¿Qué entregas tengo esta semana?",
+        )
+
+        for query in queries:
+            with self.subTest(query=query):
+                self.assertEqual(
+                    self._selected_ollama_model(query),
+                    "qwen3:14b",
+                )
+
+    def test_explicit_model_overrides_automatic_routing(self):
+        cases = (
+            (
+                "¿Dónde hablan mis apuntes de memoria compartida?",
+                "qwen3:14b",
+            ),
+            ("¿Qué es una sección crítica?", "llama3.2:3b"),
+        )
+
+        for query, override in cases:
+            with self.subTest(query=query, override=override):
+                self.assertEqual(
+                    self._selected_ollama_model(query, override=override),
+                    override,
+                )
+
     @patch("scripts.agent_demo.LocalMaterialsSource")
     @patch("scripts.agent_demo.GmailConnector")
     @patch("scripts.agent_demo.OllamaClient")
