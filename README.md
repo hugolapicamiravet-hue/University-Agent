@@ -535,8 +535,12 @@ python scripts/agent_demo.py \
 ```
 
 Omit the final query to enter it interactively, which avoids placing it in shell
-history. The script prints only the final answer. Gmail authentication remains
-lazy and is used only if the model selects a Gmail-backed operation.
+history. The script writes the selected provider/model and concise activity or
+error status to standard error, while standard output remains the final answer.
+Known provider failures include an actionable Ollama or OpenAI configuration
+hint; invalid material roots and timezone names fail before inference. Gmail
+authentication remains lazy and is used only if the model selects a Gmail-backed
+operation.
 
 For the supported explicit references to the user’s notes or materials, both
 providers run local retrieval first and append a deterministic relative source
@@ -651,6 +655,7 @@ access, OAuth credentials, API keys, tokens, or network access.
   Ollama is local by default; Moodle is not integrated.
 - Material text extraction supports only UTF-8 TXT and embedded PDF text.
 - Scanned or image-only PDFs, OCR, DOCX, and PPTX are not supported.
+- Web pages and interactive course-site materials are not extracted.
 - Large or unusually complex PDFs may require substantial memory.
 - The extraction cache is process-local, metadata-invalidated, and bounded to
   256 documents by default with deterministic first-in-first-out eviction. It
@@ -659,7 +664,10 @@ access, OAuth credentials, API keys, tokens, or network access.
 - The agent supports local Ollama and optional OpenAI adapters. There is no
   conversation persistence, provider registry, or authoritative course-name
   resolution.
-- Search is lexical only: it does not infer synonyms or semantic similarity.
+- Search is lexical only: it does not infer synonyms or semantic similarity,
+  and common query words can produce weak matches instead of an empty result.
+- Local-model latency and verbosity depend on the selected model and hardware;
+  no default generation cap is applied.
 - No embeddings, vector database, semantic retrieval, or persistent RAG index
   is implemented. Generated explanations use only selected lexical passages.
 - Message bodies, MIME parts, and attachments are not processed.
