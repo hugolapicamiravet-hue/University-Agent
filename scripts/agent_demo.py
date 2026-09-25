@@ -47,6 +47,7 @@ def main() -> int:
         default="ollama",
     )
     parser.add_argument("--model")
+    parser.add_argument("--num-predict", type=int)
     parser.add_argument("query", nargs="*")
     arguments = parser.parse_args()
 
@@ -65,10 +66,14 @@ def main() -> int:
         "timezone_name": arguments.timezone,
     }
     if arguments.provider == "ollama":
+        generation_options = {}
+        if arguments.num_predict is not None:
+            generation_options["num_predict"] = arguments.num_predict
         agent = OllamaUniversityAgent(
             client=OllamaClient(),
             model=_select_ollama_model(query, arguments.model),
             **common,
+            **generation_options,
         )
     else:
         agent = UniversityAgent(

@@ -130,10 +130,13 @@ locally running Ollama server. It exposes the same three narrow operations as
 the OpenAI adapter while keeping trusted time, timezone, connectors, local
 roots, and resource caps under host control.
 
-The default local model is `qwen3:14b`, the exact tool-capable tag validated for
-this project. Local inference has no per-request API charge, but consumes local
-CPU/GPU, RAM, storage, and energy. Provider, internal-operation, and tool-round
-failures cross the public boundary only as sanitized exceptions.
+The adapter default remains `qwen3:14b`. At the demo host boundary, measured
+local acceptance results support a narrow automatic policy: explicit personal-
+material queries use `llama3.2:3b`, while other local queries use `qwen3:14b`.
+An explicit model selection always overrides this routing. Local inference has
+no per-request API charge, but consumes local CPU/GPU, RAM, storage, and energy.
+Provider, internal-operation, and tool-round failures cross the public boundary
+only as sanitized exceptions.
 
 Both agent adapters deterministically run local lexical retrieval before the
 model when a query explicitly refers to the user’s notes or materials using
@@ -278,12 +281,13 @@ python -m pip install -e .
 
 ## Ollama setup
 
-The primary inference path requires Ollama running locally and the default
-model available under its exact tag:
+The primary inference path requires Ollama running locally with both measured
+model tags available:
 
 ```bash
 ollama list
-ollama pull qwen3:14b  # only if the model is not already installed
+ollama pull llama3.2:3b  # only if the model is not already installed
+ollama pull qwen3:14b    # only if the model is not already installed
 ```
 
 The Ollama application normally provides the local server at
@@ -490,8 +494,25 @@ python scripts/agent_demo.py \
   --timezone Europe/Madrid
 ```
 
-Ollama is the default, so `--provider ollama` may be omitted. Override the
-local model with `--model` only when that exact tag is already available.
+Ollama is the default, so `--provider ollama` may be omitted. When `--model`
+is omitted, the demo uses the measured local routing policy: explicit personal-
+material queries use `llama3.2:3b`, while all other local queries use
+`qwen3:14b`. An explicit `--model` value always overrides this selection and
+must name an available local tag.
+
+Optionally cap Ollama generation from the host:
+
+```bash
+python scripts/agent_demo.py \
+  --materials-root /path/to/university-materials \
+  --timezone Europe/Madrid \
+  --num-predict 256 \
+  "¿Qué es una sección crítica?"
+```
+
+Lower `--num-predict` values can reduce latency and verbosity, but values that
+are too small may truncate answers. The option is unset by default because no
+universal generation budget has been selected yet.
 
 Use the optional OpenAI adapter explicitly:
 
@@ -531,11 +552,10 @@ Run the isolated unit-test suite from the repository root after installation:
 python -m unittest discover -s tests
 ```
 
-The current suite contains 205 tests. Pure parsers are tested directly, while
-Gmail-dependent behavior uses injected or mocked services and connectors. The
-Ollama and OpenAI adapters use fake injected clients. Tests do not require a
-live Ollama server, Gmail, OpenAI access, OAuth credentials, API keys, tokens,
-or network access.
+Pure parsers are tested directly, while Gmail-dependent behavior uses injected
+or mocked services and connectors. The Ollama and OpenAI adapters use fake
+injected clients. Tests do not require a live Ollama server, Gmail, OpenAI
+access, OAuth credentials, API keys, tokens, or network access.
 
 ## Project structure
 

@@ -88,6 +88,51 @@ class OllamaUniversityAgentTests(unittest.TestCase):
         self.assertEqual(request["model"], "qwen3:14b")
         self.assertEqual(request["messages"][-1], {"role": "user", "content": "Hola"})
         self.assertIs(request["think"], False)
+        self.assertNotIn("options", request)
+
+    def test_explicit_generation_budget_is_forwarded(self):
+        agent, client = self.make_agent(
+            [final_response()],
+            num_predict=256,
+        )
+
+        agent.run("Fictional", now=self.now)
+
+        self.assertEqual(client.calls[0]["options"], {"num_predict": 256})
+
+    def test_invalid_generation_budgets_are_rejected(self):
+        for value in (0, -1, True, False, 1.5, "256"):
+            with self.subTest(value=value):
+                with self.assertRaisesRegex(
+                    ValueError,
+                    "num_predict must be a positive integer or None",
+                ):
+                    self.make_agent([final_response()], num_predict=value)
+
+    @patch("university_agent.agent_tools.get_deadlines", return_value=[])
+    def test_generation_budget_is_host_controlled_across_tool_rounds(
+        self,
+        get_deadlines,
+    ):
+        agent, client = self.make_agent(
+            [
+                tool_response(("get_remaining_week_deadlines", {})),
+                final_response(),
+            ],
+            num_predict=384,
+        )
+
+        agent.run("Fictional", now=self.now)
+
+        self.assertEqual(len(client.calls), 2)
+        for request in client.calls:
+            self.assertEqual(request["options"], {"num_predict": 384})
+        functions = [tool["function"] for tool in client.calls[0]["tools"]]
+        for function in functions:
+            self.assertNotIn(
+                "num_predict",
+                function["parameters"]["properties"],
+            )
 
     def test_tool_schemas_expose_only_model_arguments(self):
         agent, client = self.make_agent([final_response()])
@@ -111,6 +156,7 @@ class OllamaUniversityAgentTests(unittest.TestCase):
             "materials_source",
             "max_gmail_results",
             "max_chunk_chars",
+            "num_predict",
         }
         for function in functions:
             parameters = function["parameters"]

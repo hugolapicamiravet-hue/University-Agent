@@ -53,15 +53,23 @@ class OllamaUniversityAgent:
         max_material_results: int = 10,
         max_chunk_chars: int = 2000,
         max_tool_rounds: int = 4,
+        num_predict: int | None = None,
     ) -> None:
         if not model.strip():
             raise ValueError("model must not be blank")
         if max_tool_rounds < 1:
             raise ValueError("max_tool_rounds must be positive")
+        if num_predict is not None and (
+            isinstance(num_predict, bool)
+            or not isinstance(num_predict, int)
+            or num_predict < 1
+        ):
+            raise ValueError("num_predict must be a positive integer or None")
 
         self._client = client
         self._model = model
         self._max_tool_rounds = max_tool_rounds
+        self._num_predict = num_predict
         self._runtime = AgentToolRuntime(
             connector=connector,
             materials_source=materials_source,
@@ -181,13 +189,16 @@ class OllamaUniversityAgent:
             ) from error
 
     def _chat(self, messages: list[Any]) -> Any:
+        request = {
+            "model": self._model,
+            "messages": messages,
+            "tools": self._tools,
+            "think": False,
+        }
+        if self._num_predict is not None:
+            request["options"] = {"num_predict": self._num_predict}
         try:
-            return self._client.chat(
-                model=self._model,
-                messages=messages,
-                tools=self._tools,
-                think=False,
-            )
+            return self._client.chat(**request)
         except Exception as error:
             raise OllamaUniversityAgentProviderError(
                 "Ollama chat request failed"

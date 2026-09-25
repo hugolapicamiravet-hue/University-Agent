@@ -85,6 +85,44 @@ class AgentDemoTests(unittest.TestCase):
     @patch("scripts.agent_demo.GmailConnector")
     @patch("scripts.agent_demo.OllamaClient")
     @patch("scripts.agent_demo.OllamaUniversityAgent")
+    def test_num_predict_is_forwarded_only_to_ollama_agent(
+        self,
+        agent_type,
+        client_type,
+        connector_type,
+        source_type,
+    ):
+        agent_type.return_value.run.return_value = "Bounded answer"
+
+        with patch(
+            "sys.argv",
+            [
+                "agent_demo.py",
+                "--materials-root",
+                "/fictional/materials",
+                "--timezone",
+                "Europe/Madrid",
+                "--num-predict",
+                "256",
+                "Fictional query",
+            ],
+        ), patch("builtins.print"):
+            result = agent_demo.main()
+
+        self.assertEqual(result, 0)
+        agent_type.assert_called_once_with(
+            client=client_type.return_value,
+            connector=connector_type.return_value,
+            materials_source=source_type.return_value,
+            timezone_name="Europe/Madrid",
+            model="qwen3:14b",
+            num_predict=256,
+        )
+
+    @patch("scripts.agent_demo.LocalMaterialsSource")
+    @patch("scripts.agent_demo.GmailConnector")
+    @patch("scripts.agent_demo.OllamaClient")
+    @patch("scripts.agent_demo.OllamaUniversityAgent")
     def test_ollama_is_the_default_provider(
         self,
         agent_type,
