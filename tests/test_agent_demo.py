@@ -1,18 +1,63 @@
-"""Isolated tests for provider selection in the command-line demo."""
+"""Isolated tests for the packaged command-line interface."""
 
+import subprocess
+import sys
+import tomllib
 import unittest
-from contextlib import redirect_stderr
+from contextlib import redirect_stderr, redirect_stdout
 from io import StringIO
+from pathlib import Path
 from unittest.mock import Mock, patch
 
-from scripts import agent_demo
+from university_agent import cli
 
 
-class AgentDemoTests(unittest.TestCase):
+class CliTests(unittest.TestCase):
     def setUp(self):
-        status_patcher = patch("scripts.agent_demo._status")
-        status_patcher.start()
-        self.addCleanup(status_patcher.stop)
+        self._status_patcher = patch("university_agent.cli._status")
+        self._status_patcher.start()
+        self.addCleanup(self._status_patcher.stop)
+
+    def test_package_cli_import_does_not_execute_main(self):
+        completed = subprocess.run(
+            [sys.executable, "-c", "import university_agent.cli"],
+            capture_output=True,
+            check=False,
+            text=True,
+        )
+
+        self.assertEqual(completed.returncode, 0)
+        self.assertEqual(completed.stdout, "")
+        self.assertEqual(completed.stderr, "")
+
+    def test_help_exits_successfully_without_creating_dependencies(self):
+        with (
+            patch("sys.argv", ["university-agent", "--help"]),
+            patch("university_agent.cli.LocalMaterialsSource") as source_type,
+            redirect_stdout(StringIO()) as output,
+            self.assertRaises(SystemExit) as raised,
+        ):
+            cli.main()
+
+        self.assertEqual(raised.exception.code, 0)
+        self.assertIn("local-first University Agent", output.getvalue())
+        source_type.assert_not_called()
+
+    def test_packaging_declares_console_entry_point(self):
+        project_root = Path(__file__).resolve().parents[1]
+        configuration = tomllib.loads(
+            (project_root / "pyproject.toml").read_text(encoding="utf-8")
+        )
+
+        self.assertEqual(
+            configuration["project"]["scripts"]["university-agent"],
+            "university_agent.cli:main",
+        )
+
+    def test_compatibility_wrapper_delegates_to_package_cli(self):
+        from scripts import agent_demo
+
+        self.assertIs(agent_demo.main, cli.main)
 
     def _selected_ollama_model(
         self,
@@ -21,7 +66,7 @@ class AgentDemoTests(unittest.TestCase):
         override: str | None = None,
     ) -> str:
         arguments = [
-            "agent_demo.py",
+            "cli.py",
             "--materials-root",
             "/fictional/materials",
             "--timezone",
@@ -32,15 +77,15 @@ class AgentDemoTests(unittest.TestCase):
         arguments.append(query)
 
         with (
-            patch("scripts.agent_demo.LocalMaterialsSource"),
-            patch("scripts.agent_demo.GmailConnector"),
-            patch("scripts.agent_demo.OllamaClient"),
-            patch("scripts.agent_demo.OllamaUniversityAgent") as agent_type,
+            patch("university_agent.cli.LocalMaterialsSource"),
+            patch("university_agent.cli.GmailConnector"),
+            patch("university_agent.cli.OllamaClient"),
+            patch("university_agent.cli.OllamaUniversityAgent") as agent_type,
             patch("sys.argv", arguments),
             patch("builtins.print"),
         ):
             agent_type.return_value.run.return_value = "Local answer"
-            self.assertEqual(agent_demo.main(), 0)
+            self.assertEqual(cli.main(), 0)
 
         return agent_type.call_args.kwargs["model"]
 
@@ -88,10 +133,10 @@ class AgentDemoTests(unittest.TestCase):
                     override,
                 )
 
-    @patch("scripts.agent_demo.LocalMaterialsSource")
-    @patch("scripts.agent_demo.GmailConnector")
-    @patch("scripts.agent_demo.OllamaClient")
-    @patch("scripts.agent_demo.OllamaUniversityAgent")
+    @patch("university_agent.cli.LocalMaterialsSource")
+    @patch("university_agent.cli.GmailConnector")
+    @patch("university_agent.cli.OllamaClient")
+    @patch("university_agent.cli.OllamaUniversityAgent")
     def test_num_predict_is_forwarded_only_to_ollama_agent(
         self,
         agent_type,
@@ -104,7 +149,7 @@ class AgentDemoTests(unittest.TestCase):
         with patch(
             "sys.argv",
             [
-                "agent_demo.py",
+                "cli.py",
                 "--materials-root",
                 "/fictional/materials",
                 "--timezone",
@@ -114,7 +159,7 @@ class AgentDemoTests(unittest.TestCase):
                 "Fictional query",
             ],
         ), patch("builtins.print"):
-            result = agent_demo.main()
+            result = cli.main()
 
         self.assertEqual(result, 0)
         agent_type.assert_called_once_with(
@@ -126,10 +171,10 @@ class AgentDemoTests(unittest.TestCase):
             num_predict=256,
         )
 
-    @patch("scripts.agent_demo.LocalMaterialsSource")
-    @patch("scripts.agent_demo.GmailConnector")
-    @patch("scripts.agent_demo.OllamaClient")
-    @patch("scripts.agent_demo.OllamaUniversityAgent")
+    @patch("university_agent.cli.LocalMaterialsSource")
+    @patch("university_agent.cli.GmailConnector")
+    @patch("university_agent.cli.OllamaClient")
+    @patch("university_agent.cli.OllamaUniversityAgent")
     def test_ollama_is_the_default_provider(
         self,
         agent_type,
@@ -142,7 +187,7 @@ class AgentDemoTests(unittest.TestCase):
         with patch(
             "sys.argv",
             [
-                "agent_demo.py",
+                "cli.py",
                 "--materials-root",
                 "/fictional/materials",
                 "--timezone",
@@ -151,11 +196,11 @@ class AgentDemoTests(unittest.TestCase):
                 "query",
             ],
         ), patch("builtins.print") as output:
-            result = agent_demo.main()
+            result = cli.main()
 
         self.assertEqual(result, 0)
         source_type.assert_called_once_with(
-            agent_demo.Path("/fictional/materials"),
+            cli.Path("/fictional/materials"),
             excluded_relative_paths=[],
         )
         agent_type.assert_called_once_with(
@@ -167,10 +212,10 @@ class AgentDemoTests(unittest.TestCase):
         )
         output.assert_called_once_with("Local answer")
 
-    @patch("scripts.agent_demo.LocalMaterialsSource")
-    @patch("scripts.agent_demo.GmailConnector")
-    @patch("scripts.agent_demo.OpenAI")
-    @patch("scripts.agent_demo.UniversityAgent")
+    @patch("university_agent.cli.LocalMaterialsSource")
+    @patch("university_agent.cli.GmailConnector")
+    @patch("university_agent.cli.OpenAI")
+    @patch("university_agent.cli.UniversityAgent")
     def test_openai_remains_an_explicit_option(
         self,
         agent_type,
@@ -183,7 +228,7 @@ class AgentDemoTests(unittest.TestCase):
         with patch(
             "sys.argv",
             [
-                "agent_demo.py",
+                "cli.py",
                 "--provider",
                 "openai",
                 "--model",
@@ -195,11 +240,11 @@ class AgentDemoTests(unittest.TestCase):
                 "Fictional query",
             ],
         ), patch("builtins.print") as output:
-            result = agent_demo.main()
+            result = cli.main()
 
         self.assertEqual(result, 0)
         source_type.assert_called_once_with(
-            agent_demo.Path("/fictional/materials"),
+            cli.Path("/fictional/materials"),
             excluded_relative_paths=[],
         )
         agent_type.assert_called_once_with(
@@ -211,10 +256,10 @@ class AgentDemoTests(unittest.TestCase):
         )
         output.assert_called_once_with("Optional answer")
 
-    @patch("scripts.agent_demo.LocalMaterialsSource")
-    @patch("scripts.agent_demo.GmailConnector")
-    @patch("scripts.agent_demo.OllamaClient")
-    @patch("scripts.agent_demo.OllamaUniversityAgent")
+    @patch("university_agent.cli.LocalMaterialsSource")
+    @patch("university_agent.cli.GmailConnector")
+    @patch("university_agent.cli.OllamaClient")
+    @patch("university_agent.cli.OllamaUniversityAgent")
     def test_repeatable_exclusions_are_host_configuration(
         self,
         agent_type,
@@ -227,7 +272,7 @@ class AgentDemoTests(unittest.TestCase):
         with patch(
             "sys.argv",
             [
-                "agent_demo.py",
+                "cli.py",
                 "--materials-root",
                 "/fictional/materials",
                 "--exclude",
@@ -239,11 +284,11 @@ class AgentDemoTests(unittest.TestCase):
                 "Fictional query",
             ],
         ), patch("builtins.print"):
-            result = agent_demo.main()
+            result = cli.main()
 
         self.assertEqual(result, 0)
         source_type.assert_called_once_with(
-            agent_demo.Path("/fictional/materials"),
+            cli.Path("/fictional/materials"),
             excluded_relative_paths=["Project/Library", "Project/Temp"],
         )
         agent_type.assert_called_once_with(
@@ -254,9 +299,50 @@ class AgentDemoTests(unittest.TestCase):
             model="qwen3:14b",
         )
 
+    @patch("university_agent.cli.LocalMaterialsSource")
+    @patch("university_agent.cli.GmailConnector")
+    @patch("university_agent.cli.OllamaClient")
+    @patch("university_agent.cli.OllamaUniversityAgent")
+    def test_status_uses_stderr_and_answer_uses_stdout(
+        self,
+        agent_type,
+        client_type,
+        connector_type,
+        source_type,
+    ):
+        agent_type.return_value.run.return_value = "Fictional answer"
+        self._status_patcher.stop()
+        try:
+            with (
+                patch(
+                    "sys.argv",
+                    [
+                        "university-agent",
+                        "--materials-root",
+                        "/fictional/materials",
+                        "--timezone",
+                        "Europe/Madrid",
+                        "Fictional query",
+                    ],
+                ),
+                redirect_stdout(StringIO()) as output,
+                redirect_stderr(StringIO()) as status,
+            ):
+                result = cli.main()
+        finally:
+            self._status_patcher.start()
+
+        self.assertEqual(result, 0)
+        self.assertEqual(output.getvalue(), "Fictional answer\n")
+        self.assertEqual(
+            status.getvalue(),
+            "Using local Ollama model qwen3:14b.\n"
+            "Generating the answer...\n",
+        )
+
     def test_help_explains_local_defaults_and_host_options(self):
         help_text = " ".join(
-            agent_demo._build_parser().format_help().split()
+            cli._build_parser().format_help().split()
         )
 
         for expected in (
@@ -272,10 +358,10 @@ class AgentDemoTests(unittest.TestCase):
             with self.subTest(expected=expected):
                 self.assertIn(expected, help_text)
 
-    @patch("scripts.agent_demo.LocalMaterialsSource")
-    @patch("scripts.agent_demo.GmailConnector")
-    @patch("scripts.agent_demo.OllamaClient")
-    @patch("scripts.agent_demo.OllamaUniversityAgent")
+    @patch("university_agent.cli.LocalMaterialsSource")
+    @patch("university_agent.cli.GmailConnector")
+    @patch("university_agent.cli.OllamaClient")
+    @patch("university_agent.cli.OllamaUniversityAgent")
     def test_status_identifies_model_and_explicit_material_search(
         self,
         agent_type,
@@ -288,17 +374,17 @@ class AgentDemoTests(unittest.TestCase):
         with patch(
             "sys.argv",
             [
-                "agent_demo.py",
+                "cli.py",
                 "--materials-root",
                 "/fictional/materials",
                 "--timezone",
                 "Europe/Madrid",
                 "¿Dónde hablan mis apuntes de semáforos?",
             ],
-        ), patch("scripts.agent_demo._status") as status, patch(
+        ), patch("university_agent.cli._status") as status, patch(
             "builtins.print"
         ) as output:
-            result = agent_demo.main()
+            result = cli.main()
 
         self.assertEqual(result, 0)
         self.assertEqual(
@@ -310,10 +396,10 @@ class AgentDemoTests(unittest.TestCase):
         )
         output.assert_called_once_with("Grounded answer")
 
-    @patch("scripts.agent_demo.LocalMaterialsSource")
+    @patch("university_agent.cli.LocalMaterialsSource")
     def test_missing_or_unusable_material_root_has_safe_error(self, source_type):
         arguments = [
-            "agent_demo.py",
+            "cli.py",
             "--materials-root",
             "/fictional/private/path",
             "--timezone",
@@ -326,39 +412,39 @@ class AgentDemoTests(unittest.TestCase):
         ):
             with self.subTest(error=type(error).__name__), patch(
                 "sys.argv", arguments
-            ), patch("scripts.agent_demo._status") as status:
+            ), patch("university_agent.cli._status") as status:
                 source_type.side_effect = error
 
-                self.assertEqual(agent_demo.main(), 2)
+                self.assertEqual(cli.main(), 2)
                 status.assert_called_once_with(
                     "Materials root is missing or is not a usable directory."
                 )
                 self.assertNotIn("private", status.call_args.args[0])
 
-    @patch("scripts.agent_demo.LocalMaterialsSource")
+    @patch("university_agent.cli.LocalMaterialsSource")
     def test_unknown_timezone_has_actionable_error(self, source_type):
         with patch(
             "sys.argv",
             [
-                "agent_demo.py",
+                "cli.py",
                 "--materials-root",
                 "/fictional/materials",
                 "--timezone",
                 "Fictional/Nowhere",
                 "Fictional query",
             ],
-        ), patch("scripts.agent_demo._status") as status:
-            result = agent_demo.main()
+        ), patch("university_agent.cli._status") as status:
+            result = cli.main()
 
         self.assertEqual(result, 2)
         status.assert_called_once_with(
             "Unknown timezone. Use an IANA name such as Europe/Madrid."
         )
 
-    @patch("scripts.agent_demo.LocalMaterialsSource")
-    @patch("scripts.agent_demo.GmailConnector")
-    @patch("scripts.agent_demo.OllamaClient")
-    @patch("scripts.agent_demo.OllamaUniversityAgent")
+    @patch("university_agent.cli.LocalMaterialsSource")
+    @patch("university_agent.cli.GmailConnector")
+    @patch("university_agent.cli.OllamaClient")
+    @patch("university_agent.cli.OllamaUniversityAgent")
     def test_ollama_provider_error_is_actionable_and_does_not_reach_stdout(
         self,
         agent_type,
@@ -367,33 +453,33 @@ class AgentDemoTests(unittest.TestCase):
         source_type,
     ):
         agent_type.return_value.run.side_effect = (
-            agent_demo.OllamaUniversityAgentProviderError("sanitized")
+            cli.OllamaUniversityAgentProviderError("sanitized")
         )
 
         with patch(
             "sys.argv",
             [
-                "agent_demo.py",
+                "cli.py",
                 "--materials-root",
                 "/fictional/materials",
                 "--timezone",
                 "Europe/Madrid",
                 "Fictional query",
             ],
-        ), patch("scripts.agent_demo._status") as status, patch(
+        ), patch("university_agent.cli._status") as status, patch(
             "builtins.print"
         ) as output:
-            result = agent_demo.main()
+            result = cli.main()
 
         self.assertEqual(result, 1)
         self.assertIn("qwen3:14b", status.call_args.args[0])
         self.assertIn("ollama list", status.call_args.args[0])
         output.assert_not_called()
 
-    @patch("scripts.agent_demo.LocalMaterialsSource")
-    @patch("scripts.agent_demo.GmailConnector")
-    @patch("scripts.agent_demo.OllamaClient")
-    @patch("scripts.agent_demo.OllamaUniversityAgent")
+    @patch("university_agent.cli.LocalMaterialsSource")
+    @patch("university_agent.cli.GmailConnector")
+    @patch("university_agent.cli.OllamaClient")
+    @patch("university_agent.cli.OllamaUniversityAgent")
     def test_tool_failure_has_actionable_safe_error(
         self,
         agent_type,
@@ -402,21 +488,21 @@ class AgentDemoTests(unittest.TestCase):
         source_type,
     ):
         agent_type.return_value.run.side_effect = (
-            agent_demo.OllamaUniversityAgentToolError("private detail")
+            cli.OllamaUniversityAgentToolError("private detail")
         )
 
         with patch(
             "sys.argv",
             [
-                "agent_demo.py",
+                "cli.py",
                 "--materials-root",
                 "/fictional/materials",
                 "--timezone",
                 "Europe/Madrid",
                 "Fictional query",
             ],
-        ), patch("scripts.agent_demo._status") as status:
-            result = agent_demo.main()
+        ), patch("university_agent.cli._status") as status:
+            result = cli.main()
 
         self.assertEqual(result, 1)
         self.assertIn("academic data operation failed", status.call_args.args[0])
@@ -424,7 +510,7 @@ class AgentDemoTests(unittest.TestCase):
         self.assertNotIn("private detail", status.call_args.args[0])
 
     def test_nonpositive_num_predict_is_rejected_by_cli(self):
-        parser = agent_demo._build_parser()
+        parser = cli._build_parser()
 
         for value in ("0", "-1"):
             with (
@@ -444,21 +530,21 @@ class AgentDemoTests(unittest.TestCase):
                     ]
                 )
 
-    @patch("scripts.agent_demo.LocalMaterialsSource")
-    @patch("scripts.agent_demo.GmailConnector")
-    @patch("scripts.agent_demo.OpenAI")
+    @patch("university_agent.cli.LocalMaterialsSource")
+    @patch("university_agent.cli.GmailConnector")
+    @patch("university_agent.cli.OpenAI")
     def test_missing_openai_configuration_has_actionable_error(
         self,
         client_type,
         connector_type,
         source_type,
     ):
-        client_type.side_effect = agent_demo.OpenAIError("private detail")
+        client_type.side_effect = cli.OpenAIError("private detail")
 
         with patch(
             "sys.argv",
             [
-                "agent_demo.py",
+                "cli.py",
                 "--provider",
                 "openai",
                 "--materials-root",
@@ -467,8 +553,8 @@ class AgentDemoTests(unittest.TestCase):
                 "Europe/Madrid",
                 "Fictional query",
             ],
-        ), patch("scripts.agent_demo._status") as status:
-            result = agent_demo.main()
+        ), patch("university_agent.cli._status") as status:
+            result = cli.main()
 
         self.assertEqual(result, 2)
         status.assert_called_once_with(

@@ -481,13 +481,13 @@ The caller is responsible for injecting authenticated/local dependencies and
 explicit time bounds. These deterministic functions return structured values
 and do not themselves print, persist, summarize, or invoke a model.
 
-### Agent demo
+### Command-line interface
 
-Run one natural-language query through local Ollama with an explicit
-user-managed materials root and IANA timezone:
+After installation, run one natural-language query through local Ollama with
+an explicit user-managed materials root and IANA timezone:
 
 ```bash
-python scripts/agent_demo.py \
+university-agent \
   --provider ollama \
   --materials-root /path/to/university-materials \
   --timezone Europe/Madrid \
@@ -497,7 +497,7 @@ python scripts/agent_demo.py \
 Repeat `--exclude` to omit exact generated subtrees relative to each course:
 
 ```bash
-python scripts/agent_demo.py \
+university-agent \
   --materials-root /path/to/university-materials \
   --exclude "Fictional Project/Library" \
   --exclude "Fictional Project/Temp" \
@@ -505,15 +505,15 @@ python scripts/agent_demo.py \
 ```
 
 Ollama is the default, so `--provider ollama` may be omitted. When `--model`
-is omitted, the demo uses the measured local routing policy: explicit personal-
-material queries use `llama3.2:3b`, while all other local queries use
+is omitted, the command uses the measured local routing policy: explicit
+personal-material queries use `llama3.2:3b`, while all other local queries use
 `qwen3:14b`. An explicit `--model` value always overrides this selection and
 must name an available local tag.
 
 Optionally cap Ollama generation from the host:
 
 ```bash
-python scripts/agent_demo.py \
+university-agent \
   --materials-root /path/to/university-materials \
   --timezone Europe/Madrid \
   --num-predict 256 \
@@ -527,7 +527,7 @@ universal generation budget has been selected yet.
 Use the optional OpenAI adapter explicitly:
 
 ```bash
-python scripts/agent_demo.py \
+university-agent \
   --provider openai \
   --materials-root /path/to/university-materials \
   --timezone Europe/Madrid \
@@ -545,6 +545,10 @@ operation.
 For the supported explicit references to the user’s notes or materials, both
 providers run local retrieval first and append a deterministic relative source
 list to the final answer. Generic questions do not force material retrieval.
+
+Run `university-agent --help` for the complete option list. The existing
+`python scripts/agent_demo.py ...` form remains available as a compatibility
+and development wrapper around the same package-owned CLI.
 
 ### Manual OAuth demo
 
@@ -588,6 +592,7 @@ access, OAuth credentials, API keys, tokens, or network access.
 │       ├── academic_operations.py
 │       ├── academic_notifications.py
 │       ├── course_notices.py
+│       ├── cli.py
 │       ├── local_material_cache.py
 │       ├── local_material_search.py
 │       ├── local_materials.py

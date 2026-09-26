@@ -17,5 +17,8 @@ dependencies = [
     "pypdf>=6,<7",
 ]
 
+[project.scripts]
+university-agent = "university_agent.cli:main"
+
 [tool.setuptools.packages.find]
 where = ["src"]
