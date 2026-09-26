@@ -1,0 +1,7 @@
+La planificación decide qué tarea utiliza el procesador. Round robin reparte
+intervalos temporales entre tareas preparadas, mientras que una política por
+prioridades favorece las tareas consideradas más urgentes.
+
+La planificación elige quién se ejecuta; la exclusión mutua controla quién
+puede entrar en una sección crítica. Son mecanismos distintos que suelen
+aparecer juntos en sistemas concurrentes.

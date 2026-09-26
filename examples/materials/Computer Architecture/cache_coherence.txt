@@ -1,0 +1,7 @@
+Cache coherence mantiene consistentes las copias de un mismo bloque de memoria
+almacenadas en varias cachés de procesador. Cuando un núcleo modifica su copia,
+el protocolo coordina la invalidación o actualización de las demás copias.
+
+Un protocolo de coherencia evita que dos núcleos observen indefinidamente
+valores incompatibles para la misma dirección compartida. Esta garantía no
+sustituye a la sincronización del programa.

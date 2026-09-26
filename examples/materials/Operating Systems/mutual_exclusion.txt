@@ -1,0 +1,8 @@
+La exclusión mutua garantiza que solo un proceso entre a la vez en una
+sección crítica que modifica estado compartido. Sin esta protección, dos
+operaciones concurrentes pueden intercalarse y producir una condición conocida
+como carrera.
+
+Un semáforo binario puede proteger la sección crítica. Cada proceso adquiere
+el permiso antes del acceso y lo libera al salir. El protocolo debe mantener
+el progreso y evitar que un proceso espere indefinidamente.

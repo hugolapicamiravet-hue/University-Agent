@@ -17,6 +17,39 @@ deterministic text extraction, chunking, and lexical retrieval for TXT and PDF
 files. The agent can select three narrow academic operations and generate a
 grounded response through either provider; it does not connect to Moodle.
 
+## Try the fictional local demo
+
+The repository includes a tiny, entirely fictional TXT corpus under
+`examples/materials`. Gmail, OpenAI, private files, and API keys are not needed
+for this demo. Install and start Ollama separately, then prepare the project and
+the small local model:
+
+```bash
+python3 -m venv .venv
+source .venv/bin/activate
+python -m pip install -e .
+ollama pull llama3.2:3b  # only if it is not already installed
+```
+
+Run either sample query from the repository root:
+
+```bash
+university-agent \
+  --materials-root examples/materials \
+  --timezone Europe/Madrid \
+  "Explícame exclusión mutua usando mis apuntes"
+
+university-agent \
+  --materials-root examples/materials \
+  --timezone Europe/Madrid \
+  "¿Dónde hablan mis apuntes de cache coherence?"
+```
+
+These explicit personal-material queries route to `llama3.2:3b`, search the
+included files, and append deterministic relative source provenance. Live local
+inference requires Ollama; the automated test suite uses fake clients and needs
+no model server or network access.
+
 ## Implemented functionality
 
 ### Read-only Gmail integration
@@ -582,6 +615,13 @@ access, OAuth credentials, API keys, tokens, or network access.
 ├── .gitignore
 ├── README.md
 ├── pyproject.toml
+├── examples/
+│   └── materials/
+│       ├── Computer Architecture/
+│       │   └── cache_coherence.txt
+│       └── Operating Systems/
+│           ├── mutual_exclusion.txt
+│           └── scheduling.txt
 ├── scripts/
 │   ├── agent_demo.py
 │   └── gmail_demo.py
@@ -609,6 +649,7 @@ access, OAuth credentials, API keys, tokens, or network access.
 │           └── gmail.py
 └── tests/
     ├── test_agent_demo.py
+    ├── test_cli_demo.py
     ├── test_agent_instructions.py
     ├── test_agent_grounding.py
     ├── test_agent_lexical_instruction.py
