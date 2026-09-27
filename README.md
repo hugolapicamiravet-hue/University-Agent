@@ -53,9 +53,8 @@ no model server or network access.
 ## Release status
 
 Version `0.1.0` is an initial public MVP and does not promise a stable Python
-API. [Draft release notes](docs/releases/v0.1.0.md) are available, but release
-publication remains pending until the project owner selects and applies a
-distribution license.
+API. [Release notes](docs/releases/v0.1.0.md) describe its implemented scope and
+current limitations.
 
 ## Implemented functionality
 
@@ -620,6 +619,7 @@ access, OAuth credentials, API keys, tokens, or network access.
 ```text
 .
 ├── .gitignore
+├── LICENSE
 ├── MANIFEST.in
 ├── README.md
 ├── pyproject.toml
@@ -746,3 +746,7 @@ The following items are future work and are not currently implemented:
 3. Evaluate semantic retrieval as a complement to the existing lexical search
    only when real queries demonstrate the need.
 4. Later consider state, automation, and a user-facing interface.
+
+## License
+
+University Agent is licensed under the Apache License 2.0. See [LICENSE](LICENSE).
