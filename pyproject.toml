@@ -20,5 +20,9 @@ dependencies = [
 [project.scripts]
 university-agent = "university_agent.cli:main"
 
+[project.urls]
+Repository = "https://github.com/hugolapicamiravet-hue/University-Agent"
+Issues = "https://github.com/hugolapicamiravet-hue/University-Agent/issues"
+
 [tool.setuptools.packages.find]
 where = ["src"]
