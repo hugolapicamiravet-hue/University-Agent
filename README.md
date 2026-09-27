@@ -50,6 +50,13 @@ included files, and append deterministic relative source provenance. Live local
 inference requires Ollama; the automated test suite uses fake clients and needs
 no model server or network access.
 
+## Release status
+
+Version `0.1.0` is an initial public MVP and does not promise a stable Python
+API. [Draft release notes](docs/releases/v0.1.0.md) are available, but release
+publication remains pending until the project owner selects and applies a
+distribution license.
+
 ## Implemented functionality
 
 ### Read-only Gmail integration
@@ -613,8 +620,12 @@ access, OAuth credentials, API keys, tokens, or network access.
 ```text
 .
 ├── .gitignore
+├── MANIFEST.in
 ├── README.md
 ├── pyproject.toml
+├── docs/
+│   └── releases/
+│       └── v0.1.0.md
 ├── examples/
 │   └── materials/
 │       ├── Computer Architecture/
