@@ -152,6 +152,21 @@ are rebuilt for every requested character limit and ranking remains dynamic.
 The cache is neither a persistent index nor a database and disappears when the
 process exits.
 
+### Offline interactive-material normalization
+
+`interactive_materials.py` normalizes academic text that has already been
+captured from individual states of an interactive resource. It preserves state
+headings and paragraph boundaries, removes only exact repeated normalized text
+blocks from later states, and writes a safe UTF-8 TXT artifact beneath an
+explicitly selected destination directory. The resulting file enters the
+existing discovery, extraction, chunking, and lexical-search pipeline as a
+normal local material.
+
+This operation is entirely offline. It does not log in to Moodle, control a
+browser, access an iframe, execute HTML or JavaScript, or use an AI provider.
+Browser-assisted per-state capture is planned separately and Google Sites
+import is not currently implemented.
+
 ### Agent-facing application operations
 
 `academic_operations.py` exposes three narrow deterministic operations used by
