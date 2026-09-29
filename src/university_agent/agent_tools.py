@@ -255,6 +255,19 @@ def required_material_search_arguments(query: str) -> dict[str, Any] | None:
     return {"query": query, "course_name": None, "limit": None}
 
 
+def required_remaining_week_deadline_arguments(
+    query: str,
+) -> dict[str, Any] | None:
+    """Require the established week-deadline tool for the verified UI query."""
+    if not isinstance(query, str):
+        return None
+    normalized = unicodedata.normalize("NFC", query).casefold()
+    normalized = " ".join(normalized.split()).strip(" ¿?!.\t\n")
+    if normalized != "qué tengo que hacer esta semana":
+        return None
+    return {}
+
+
 def material_citations_from_payload(
     payload: dict[str, Any],
 ) -> tuple[MaterialCitation, ...]:

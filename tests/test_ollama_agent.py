@@ -90,6 +90,35 @@ class OllamaUniversityAgentTests(unittest.TestCase):
         self.assertIs(request["think"], False)
         self.assertNotIn("options", request)
 
+    @patch("university_agent.agent_tools.get_deadlines")
+    def test_verified_week_query_gets_deadlines_before_model_response(
+        self,
+        get_deadlines,
+    ):
+        get_deadlines.return_value = [
+            DeadlineResult("Fictional task", datetime(2054, 9, 25, 12, 0))
+        ]
+        agent, client = self.make_agent(
+            [final_response("Tienes una entrega ficticia.")]
+        )
+
+        answer = agent.run("¿Qué tengo que hacer esta semana?", now=self.now)
+
+        self.assertEqual(answer, "Tienes una entrega ficticia.")
+        self.assertEqual(len(client.calls), 1)
+        self.assertEqual(
+            self.tool_payload(client, "get_remaining_week_deadlines"),
+            {
+                "ok": True,
+                "results": [
+                    {
+                        "title": "Fictional task",
+                        "due_at": "2054-09-25T12:00:00",
+                    }
+                ],
+            },
+        )
+
     def test_explicit_generation_budget_is_forwarded(self):
         agent, client = self.make_agent(
             [final_response()],

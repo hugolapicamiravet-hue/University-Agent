@@ -98,6 +98,34 @@ class UniversityAgentTests(unittest.TestCase):
         self.assertIs(request["store"], False)
         self.assertIs(request["parallel_tool_calls"], True)
 
+    @patch("university_agent.agent_tools.get_deadlines")
+    def test_verified_week_query_gets_deadlines_before_model_response(
+        self,
+        get_deadlines,
+    ):
+        get_deadlines.return_value = [
+            DeadlineResult("Fictional task", datetime(2054, 9, 25, 12, 0))
+        ]
+        agent, client = self.make_agent(
+            [FakeResponse(output=[], output_text="Tienes una entrega ficticia.")]
+        )
+
+        answer = agent.run("¿Qué tengo que hacer esta semana?", now=self.now)
+
+        self.assertEqual(answer, "Tienes una entrega ficticia.")
+        self.assertEqual(
+            self.output_for(client, "host-required-week-deadlines"),
+            {
+                "ok": True,
+                "results": [
+                    {
+                        "title": "Fictional task",
+                        "due_at": "2054-09-25T12:00:00",
+                    }
+                ],
+            },
+        )
+
     def test_strict_tool_schemas_expose_only_model_arguments(self):
         agent, client = self.make_agent(
             [FakeResponse(output=[], output_text="Fictional answer")]

@@ -15,6 +15,7 @@ from university_agent.agent_tools import (
     invalid_arguments_payload,
     material_citations_from_payload,
     required_material_search_arguments,
+    required_remaining_week_deadline_arguments,
 )
 from university_agent.connectors.gmail import GmailConnector
 from university_agent.local_materials import LocalMaterialsSource
@@ -89,6 +90,29 @@ class UniversityAgent:
         input_items: list[Any] = [{"role": "user", "content": user_input}]
         citations = []
         tool_rounds = 0
+
+        deadline_arguments = required_remaining_week_deadline_arguments(user_input)
+        if deadline_arguments is not None:
+            deadline_payload = self._execute_runtime(
+                "get_remaining_week_deadlines",
+                deadline_arguments,
+                now=now,
+            )
+            input_items.extend(
+                (
+                    {
+                        "type": "function_call",
+                        "call_id": "host-required-week-deadlines",
+                        "name": "get_remaining_week_deadlines",
+                        "arguments": json.dumps(deadline_arguments),
+                    },
+                    {
+                        "type": "function_call_output",
+                        "call_id": "host-required-week-deadlines",
+                        "output": _encode_payload(deadline_payload),
+                    },
+                )
+            )
 
         required_arguments = required_material_search_arguments(user_input)
         if required_arguments is not None:

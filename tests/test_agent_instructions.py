@@ -2,10 +2,34 @@
 
 import unittest
 
-from university_agent.agent_tools import SYSTEM_INSTRUCTIONS
+from university_agent.agent_tools import (
+    SYSTEM_INSTRUCTIONS,
+    required_remaining_week_deadline_arguments,
+)
 
 
 class AgentInstructionTests(unittest.TestCase):
+    def test_verified_week_query_requires_deadline_tool_conservatively(self):
+        for query in (
+            "¿Qué tengo que hacer esta semana?",
+            "  QUÉ   TENGO QUE HACER ESTA SEMANA  ",
+        ):
+            with self.subTest(query=query):
+                self.assertEqual(
+                    required_remaining_week_deadline_arguments(query),
+                    {},
+                )
+
+        for query in (
+            "¿Qué tengo que hacer?",
+            "¿Qué tengo que estudiar esta semana?",
+            "Explica qué es una semana.",
+        ):
+            with self.subTest(query=query):
+                self.assertIsNone(
+                    required_remaining_week_deadline_arguments(query)
+                )
+
     def test_unspecified_material_course_searches_all_courses(self):
         normalized = " ".join(SYSTEM_INSTRUCTIONS.split())
 

@@ -9,6 +9,7 @@ import re
 from pathlib import Path
 from typing import Any, TypedDict
 
+from google.auth.exceptions import RefreshError
 from google.auth.transport.requests import Request
 from google.oauth2.credentials import Credentials
 from google_auth_oauthlib.flow import InstalledAppFlow
@@ -16,6 +17,7 @@ from googleapiclient.discovery import build
 
 GMAIL_READONLY_SCOPE = "https://www.googleapis.com/auth/gmail.readonly"
 SCOPES = [GMAIL_READONLY_SCOPE]
+_API_RETRIES = 2
 
 
 class GmailMessageSummary(TypedDict):
@@ -61,8 +63,12 @@ class GmailConnector:
 
         if not credentials or not credentials.valid:
             if credentials and credentials.expired and credentials.refresh_token:
-                credentials.refresh(Request())
-            else:
+                try:
+                    credentials.refresh(Request())
+                except RefreshError:
+                    credentials = None
+
+            if not credentials or not credentials.valid:
                 if not self.credentials_path.is_file():
                     raise FileNotFoundError(
                         f"Gmail OAuth credentials not found: {self.credentials_path}"
@@ -105,7 +111,7 @@ class GmailConnector:
             self._service.users()
             .messages()
             .list(userId="me", q=query, maxResults=max_results)
-            .execute()
+            .execute(num_retries=_API_RETRIES)
         )
 
         return [self.get_message(message["id"]) for message in response.get("messages", [])]
@@ -126,7 +132,7 @@ class GmailConnector:
                 format="metadata",
                 metadataHeaders=["From", "To", "Subject", "Date"],
             )
-            .execute()
+            .execute(num_retries=_API_RETRIES)
         )
         headers = {
             header["name"].casefold(): header["value"]
@@ -157,7 +163,7 @@ class GmailConnector:
             self._service.users()
             .messages()
             .get(userId="me", id=message_id, format="full")
-            .execute()
+            .execute(num_retries=_API_RETRIES)
         )
         payload = details.get("payload", {})
         return _extract_plain_text(payload if isinstance(payload, dict) else {})

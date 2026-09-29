@@ -2,14 +2,18 @@
 
 import subprocess
 import sys
+import tempfile
 import tomllib
 import unittest
 from contextlib import redirect_stderr, redirect_stdout
+from datetime import datetime
 from io import StringIO
 from pathlib import Path
 from unittest.mock import Mock, patch
+from zoneinfo import ZoneInfo
 
 from university_agent import cli
+from university_agent.connectors.gmail import GmailConnector
 
 
 class CliTests(unittest.TestCase):
@@ -91,6 +95,63 @@ class CliTests(unittest.TestCase):
             port=9876,
             open_browser=False,
         )
+
+    def test_packaged_cli_week_query_uses_body_deadline_workflow(self):
+        connector = Mock(spec=GmailConnector)
+        connector.search_messages.return_value = [
+            {
+                "id": "fictional-message",
+                "thread_id": "fictional-thread",
+                "sender": "fixture1@example.com",
+                "recipients": "fixture2@example.com",
+                "subject": "EI9001-2026-2027: Actividad semanal ficticia",
+                "date": "Tue, 29 Sep 2026 09:00:00 +0200",
+                "snippet": "",
+            }
+        ]
+        connector.get_plain_text_body.return_value = (
+            "Tenéis que completar el cuestionario ficticio antes del jueves "
+            "día 1 de octubre a las 08:00."
+        )
+        client = Mock()
+        client.chat.return_value = {
+            "message": {
+                "role": "assistant",
+                "content": "Tienes un cuestionario ficticio.",
+            }
+        }
+
+        with (
+            tempfile.TemporaryDirectory() as directory,
+            patch(
+                "sys.argv",
+                [
+                    "university-agent",
+                    "--materials-root",
+                    directory,
+                    "--timezone",
+                    "Europe/Madrid",
+                    "¿Qué tengo que hacer esta semana?",
+                ],
+            ),
+            patch("university_agent.cli.GmailConnector", return_value=connector),
+            patch("university_agent.cli.OllamaClient", return_value=client),
+            patch("university_agent.cli.datetime") as host_datetime,
+            patch("builtins.print") as output,
+        ):
+            host_datetime.now.return_value = datetime(
+                2026,
+                9,
+                29,
+                12,
+                0,
+                tzinfo=ZoneInfo("Europe/Madrid"),
+            )
+            result = cli.main()
+
+        self.assertEqual(result, 0)
+        connector.get_plain_text_body.assert_called_once_with("fictional-message")
+        output.assert_called_once_with("Tienes un cuestionario ficticio.")
 
     def test_gui_help_requires_no_configuration_or_external_service(self):
         with (

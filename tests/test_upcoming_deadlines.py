@@ -325,6 +325,31 @@ class UpcomingDeadlinesUntilTests(unittest.TestCase):
 
         self.assertEqual([result.message_id for result in results], ["at-until"])
 
+    def test_body_deadline_across_month_boundary_remains_in_week(self):
+        self.connector.search_messages.return_value = [
+            gmail_message(
+                "body-month-boundary",
+                "EI9001-2026-2027: Actividad semanal ficticia",
+                date="Tue, 29 Sep 2026 09:00:00 +0200",
+            )
+        ]
+        self.connector.get_plain_text_body.return_value = (
+            "Tenéis que completar el cuestionario ficticio antes del jueves "
+            "día 1 de octubre a las 08:00."
+        )
+
+        results = find_upcoming_deadlines_until(
+            self.connector,
+            now=datetime(2026, 9, 29, 12, 0),
+            until=datetime(2026, 10, 4, 23, 59, 59, 999999),
+        )
+
+        self.assertEqual(len(results), 1)
+        self.assertEqual(
+            results[0].notification.event_at,
+            datetime(2026, 10, 1, 8, 0),
+        )
+
     def test_deadline_after_until_is_excluded(self):
         self.connector.search_messages.return_value = [
             gmail_message("after-until", deadline_subject(24, 10))

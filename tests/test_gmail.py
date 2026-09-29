@@ -1,8 +1,12 @@
 """Isolated tests: no OAuth, credential files, or Gmail network access."""
 
 import base64
+import tempfile
 import unittest
+from pathlib import Path
 from unittest.mock import Mock, call, patch
+
+from google.auth.exceptions import RefreshError
 
 from university_agent.connectors.gmail import GmailConnector, SCOPES
 
@@ -63,6 +67,7 @@ class GmailConnectorTests(unittest.TestCase):
             self.assertEqual(self.connector.search_messages(query, 2), results)
             self.assertEqual(get.call_args_list, [call("m2"), call("m1")])
         self.messages.list.assert_called_once_with(userId="me", q=query, maxResults=2)
+        self.messages.list.return_value.execute.assert_called_once_with(num_retries=2)
         self.auth.assert_not_called()
 
     def test_empty_search_results(self):
@@ -121,6 +126,7 @@ class GmailConnectorTests(unittest.TestCase):
         self.messages.get.assert_called_once_with(
             userId="me", id="m1", format="full"
         )
+        self.messages.get.return_value.execute.assert_called_once_with(num_retries=2)
         self.auth.assert_not_called()
 
     def test_malformed_or_unsupported_body_is_safely_empty(self):
@@ -184,6 +190,60 @@ class GmailConnectorAuthenticationTests(unittest.TestCase):
             q="is:unread",
             maxResults=5,
         )
+
+    def test_revoked_refresh_token_restarts_read_only_oauth_flow(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            credentials_path = root / "credentials.json"
+            token_path = root / "token.json"
+            credentials_path.write_text("{}", encoding="utf-8")
+            token_path.write_text("{}", encoding="utf-8")
+
+            expired = Mock(
+                valid=False,
+                expired=True,
+                refresh_token="fictional-refresh-token",
+            )
+            expired.refresh.side_effect = RefreshError("revoked")
+            renewed = Mock(valid=True)
+            flow = Mock()
+            flow.run_local_server.return_value = renewed
+            service = Mock()
+            connector = GmailConnector(
+                credentials_path=credentials_path,
+                token_path=token_path,
+            )
+
+            with (
+                patch(
+                    "university_agent.connectors.gmail."
+                    "Credentials.from_authorized_user_file",
+                    return_value=expired,
+                ),
+                patch(
+                    "university_agent.connectors.gmail."
+                    "InstalledAppFlow.from_client_secrets_file",
+                    return_value=flow,
+                ) as create_flow,
+                patch.object(connector, "_save_token") as save_token,
+                patch(
+                    "university_agent.connectors.gmail.build",
+                    return_value=service,
+                ) as build,
+            ):
+                connector.authenticate()
+
+        expired.refresh.assert_called_once()
+        create_flow.assert_called_once_with(credentials_path, SCOPES)
+        flow.run_local_server.assert_called_once_with(port=0)
+        save_token.assert_called_once_with(renewed)
+        build.assert_called_once_with(
+            "gmail",
+            "v1",
+            credentials=renewed,
+            cache_discovery=False,
+        )
+        self.assertIs(connector._service, service)
 
 
 if __name__ == "__main__":

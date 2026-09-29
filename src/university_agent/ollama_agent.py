@@ -16,6 +16,7 @@ from university_agent.agent_tools import (
     invalid_arguments_payload,
     material_citations_from_payload,
     required_material_search_arguments,
+    required_remaining_week_deadline_arguments,
 )
 from university_agent.connectors.gmail import GmailConnector
 from university_agent.local_materials import LocalMaterialsSource
@@ -97,6 +98,31 @@ class OllamaUniversityAgent:
         ]
         citations = []
         tool_rounds = 0
+
+        deadline_arguments = required_remaining_week_deadline_arguments(user_input)
+        if deadline_arguments is not None:
+            deadline_payload = self._execute_runtime(
+                "get_remaining_week_deadlines",
+                deadline_arguments,
+                now=now,
+            )
+            messages.extend(
+                (
+                    {
+                        "role": "assistant",
+                        "content": "",
+                        "tool_calls": [
+                            {
+                                "function": {
+                                    "name": "get_remaining_week_deadlines",
+                                    "arguments": deadline_arguments,
+                                }
+                            }
+                        ],
+                    },
+                    _tool_message("get_remaining_week_deadlines", deadline_payload),
+                )
+            )
 
         required_arguments = required_material_search_arguments(user_input)
         if required_arguments is not None:
