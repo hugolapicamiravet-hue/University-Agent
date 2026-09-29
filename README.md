@@ -51,6 +51,45 @@ included files, and append deterministic relative source provenance. Live local
 inference requires Ollama; the automated test suite uses fake clients and needs
 no model server or network access.
 
+## Local chat GUI
+
+University-Agent includes a small browser chat served only on `127.0.0.1`. It
+uses the same Ollama adapter, deterministic tools, model routing, safe errors,
+and source attribution as the CLI. No additional GUI dependency or frontend
+build is required.
+
+Create the one-time local configuration outside the repository:
+
+```bash
+mkdir -p ~/.config/university-agent
+cp config.example.toml ~/.config/university-agent/config.toml
+```
+
+Edit `config.toml` and set `materials_root` to your local materials directory.
+Keep `model` commented out to preserve automatic routing, or set it explicitly
+to override routing for every GUI query. When working outside a repository
+checkout, create the same file directly with this minimal shape:
+
+```toml
+[university_agent]
+materials_root = "/path/to/university-materials"
+timezone = "Europe/Madrid"
+```
+
+Then start the interface:
+
+```bash
+university-agent gui
+```
+
+The browser opens automatically. Use `university-agent gui --no-browser` to
+start only the local server, or `--config PATH` to select another configuration.
+The visible conversation exists only in the current page: every backend query
+is independent, and refreshing the page clears it. No chat history is persisted.
+
+> Screenshot pending; the interface is intentionally minimal for this first
+> local GUI milestone.
+
 ## Release status
 
 Version `0.1.0` is an initial public MVP and does not promise a stable Python
@@ -217,6 +256,14 @@ appends a stable `Fuentes consultadas` list built from the actual tool results,
 using only the course name, relative path, and real PDF page when available.
 These references identify retrieved passages; they are not sentence-level
 citation alignment. Generic questions retain normal model-directed tool choice.
+
+### Local browser chat
+
+`gui.py` provides a thin loopback-only HTTP and HTML presentation layer over
+the existing Ollama backend. It supports multiline messages, Enter-to-send,
+loading feedback, duplicate-submission prevention, safe errors, and the source
+section already produced by the backend. It does not access broad Gmail or
+filesystem data directly.
 
 ### Optional OpenAI Responses agent
 
@@ -646,6 +693,7 @@ access, OAuth credentials, API keys, tokens, or network access.
 ```text
 .
 ├── .gitignore
+├── config.example.toml
 ├── LICENSE
 ├── MANIFEST.in
 ├── README.md
@@ -672,6 +720,9 @@ access, OAuth credentials, API keys, tokens, or network access.
 │       ├── academic_notifications.py
 │       ├── course_notices.py
 │       ├── cli.py
+│       ├── gui.py
+│       ├── gui_config.py
+│       ├── local_agent.py
 │       ├── local_material_cache.py
 │       ├── local_material_search.py
 │       ├── local_materials.py
@@ -698,6 +749,9 @@ access, OAuth credentials, API keys, tokens, or network access.
     ├── test_course_name_hygiene.py
     ├── test_course_notices.py
     ├── test_gmail.py
+    ├── test_gui.py
+    ├── test_gui_config.py
+    ├── test_local_agent.py
     ├── test_local_material_exclusions.py
     ├── test_local_material_cache.py
     ├── test_local_material_search_performance.py
@@ -717,6 +771,9 @@ access, OAuth credentials, API keys, tokens, or network access.
 
 - Gmail access uses only the read-only scope; the project cannot send or
   modify email.
+- The GUI binds only to `127.0.0.1`, disables request logging, and consumes the
+  same narrowed agent-facing results as the CLI. It does not render Gmail IDs,
+  sender addresses, raw bodies, OAuth data, or absolute material paths.
 - OAuth credentials and tokens remain in the local, Git-ignored `secrets/`
   directory.
 - Mailbox metadata, snippets, diagnostic output, and demo output may contain
@@ -750,6 +807,9 @@ access, OAuth credentials, API keys, tokens, or network access.
 - The agent supports local Ollama and optional OpenAI adapters. There is no
   conversation persistence, provider registry, or authoritative course-name
   resolution.
+- The GUI is local-only, has no authentication, and treats every submitted
+  question as an independent agent run. It does not provide true multi-turn
+  conversational memory.
 - Search is lexical only: it does not infer synonyms or semantic similarity,
   and common query words can produce weak matches instead of an empty result.
 - Local-model latency and verbosity depend on the selected model and hardware;
@@ -776,7 +836,8 @@ The following items are future work and are not currently implemented:
    supported integration is authorized and verified.
 3. Evaluate semantic retrieval as a complement to the existing lexical search
    only when real queries demonstrate the need.
-4. Later consider state, automation, and a user-facing interface.
+4. Consider explicit, privacy-reviewed multi-turn state and richer interface
+   features only after real local GUI usage justifies them.
 
 ## License
 

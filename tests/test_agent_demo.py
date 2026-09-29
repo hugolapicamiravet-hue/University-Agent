@@ -59,6 +59,70 @@ class CliTests(unittest.TestCase):
 
         self.assertIs(agent_demo.main, cli.main)
 
+    def test_gui_subcommand_loads_configuration_and_launches_local_ui(self):
+        configuration = Mock()
+        with (
+            patch(
+                "sys.argv",
+                [
+                    "university-agent",
+                    "gui",
+                    "--config",
+                    "/fictional/config.toml",
+                    "--port",
+                    "9876",
+                    "--no-browser",
+                ],
+            ),
+            patch(
+                "university_agent.cli.load_gui_configuration",
+                return_value=configuration,
+            ) as load_configuration,
+            patch("university_agent.cli.run_gui") as run_gui,
+        ):
+            result = cli.main()
+
+        self.assertEqual(result, 0)
+        load_configuration.assert_called_once_with(
+            cli.Path("/fictional/config.toml")
+        )
+        run_gui.assert_called_once_with(
+            configuration,
+            port=9876,
+            open_browser=False,
+        )
+
+    def test_gui_help_requires_no_configuration_or_external_service(self):
+        with (
+            patch("sys.argv", ["university-agent", "gui", "--help"]),
+            patch("university_agent.cli.load_gui_configuration") as load_configuration,
+            patch("university_agent.cli.run_gui") as run_gui,
+            redirect_stdout(StringIO()) as output,
+            self.assertRaises(SystemExit) as raised,
+        ):
+            cli.main()
+
+        self.assertEqual(raised.exception.code, 0)
+        self.assertIn("loopback-only", output.getvalue())
+        load_configuration.assert_not_called()
+        run_gui.assert_not_called()
+
+    def test_missing_gui_configuration_is_safe(self):
+        with (
+            patch("sys.argv", ["university-agent", "gui"]),
+            patch(
+                "university_agent.cli.load_gui_configuration",
+                side_effect=cli.GuiConfigurationError("safe configuration error"),
+            ),
+            patch("university_agent.cli.run_gui") as run_gui,
+            patch("university_agent.cli._status") as status,
+        ):
+            result = cli.main()
+
+        self.assertEqual(result, 2)
+        status.assert_called_once_with("safe configuration error")
+        run_gui.assert_not_called()
+
     def _selected_ollama_model(
         self,
         query: str,

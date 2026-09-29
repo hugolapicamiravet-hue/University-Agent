@@ -1,0 +1,9 @@
+[university_agent]
+materials_root = "/path/to/university-materials"
+timezone = "Europe/Madrid"
+
+# Optional. Omit this to preserve automatic Ollama model routing.
+# model = "qwen3:14b"
+
+# Optional course-relative directory exclusions.
+exclude = []

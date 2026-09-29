@@ -11,6 +11,9 @@ from openai import OpenAI, OpenAIError
 
 from university_agent.agent_tools import is_explicit_material_query
 from university_agent.connectors.gmail import GmailConnector
+from university_agent.gui import run_gui
+from university_agent.gui_config import GuiConfigurationError, load_gui_configuration
+from university_agent.local_agent import create_ollama_agent, select_ollama_model
 from university_agent.local_materials import LocalMaterialsSource
 from university_agent.ollama_agent import (
     OllamaUniversityAgent,
@@ -28,17 +31,9 @@ from university_agent.openai_agent import (
 )
 
 
-_OLLAMA_MATERIAL_MODEL = "llama3.2:3b"
-_OLLAMA_DEFAULT_MODEL = "qwen3:14b"
-
-
 def _select_ollama_model(query: str, override: str | None) -> str:
-    """Select the local model while preserving an explicit host override."""
-    if override is not None:
-        return override
-    if is_explicit_material_query(query):
-        return _OLLAMA_MATERIAL_MODEL
-    return _OLLAMA_DEFAULT_MODEL
+    """Compatibility wrapper for the shared local model policy."""
+    return select_ollama_model(query, override)
 
 
 def _status(message: str) -> None:
@@ -59,7 +54,8 @@ def _build_parser() -> argparse.ArgumentParser:
         epilog=(
             "Ollama is the default. Explicit personal-material queries use "
             "llama3.2:3b; other Ollama queries use qwen3:14b unless --model "
-            "is supplied."
+            "is supplied. Run `university-agent gui --help` for the local "
+            "chat interface."
         ),
     )
     parser.add_argument(
@@ -102,7 +98,59 @@ def _build_parser() -> argparse.ArgumentParser:
     return parser
 
 
+def _build_gui_parser() -> argparse.ArgumentParser:
+    parser = argparse.ArgumentParser(
+        prog="university-agent gui",
+        description="Start the loopback-only University-Agent chat interface.",
+    )
+    parser.add_argument(
+        "--config",
+        type=Path,
+        help=(
+            "TOML configuration path; defaults to "
+            "~/.config/university-agent/config.toml"
+        ),
+    )
+    parser.add_argument(
+        "--port",
+        type=_positive_integer,
+        default=8765,
+        help="loopback TCP port (default: 8765)",
+    )
+    parser.add_argument(
+        "--no-browser",
+        action="store_true",
+        help="start the local server without opening a browser",
+    )
+    return parser
+
+
+def _gui_main(arguments: list[str]) -> int:
+    parser = _build_gui_parser()
+    parsed = parser.parse_args(arguments)
+    if parsed.port > 65535:
+        parser.error("--port must not exceed 65535")
+    try:
+        configuration = load_gui_configuration(parsed.config)
+    except GuiConfigurationError as error:
+        _status(str(error))
+        return 2
+    try:
+        run_gui(
+            configuration,
+            port=parsed.port,
+            open_browser=not parsed.no_browser,
+        )
+    except OSError:
+        _status("The local GUI could not bind to 127.0.0.1 on that port.")
+        return 1
+    return 0
+
+
 def main() -> int:
+    if len(sys.argv) > 1 and sys.argv[1] == "gui":
+        return _gui_main(sys.argv[2:])
+
     parser = _build_parser()
     arguments = parser.parse_args()
 
@@ -136,15 +184,13 @@ def main() -> int:
         "timezone_name": arguments.timezone,
     }
     if arguments.provider == "ollama":
-        model = _select_ollama_model(query, arguments.model)
-        generation_options = {}
-        if arguments.num_predict is not None:
-            generation_options["num_predict"] = arguments.num_predict
-        agent = OllamaUniversityAgent(
+        agent, model = create_ollama_agent(
+            query=query,
             client=OllamaClient(),
-            model=model,
             **common,
-            **generation_options,
+            model_override=arguments.model,
+            num_predict=arguments.num_predict,
+            agent_factory=OllamaUniversityAgent,
         )
         _status(f"Using local Ollama model {model}.")
     else:

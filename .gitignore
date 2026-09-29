@@ -19,6 +19,7 @@ dist/
 .env
 .env.*
 !.env.example
+config.toml
 
 # Credentials, OAuth tokens, and secrets
 credentials*.json
