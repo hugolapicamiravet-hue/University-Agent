@@ -10,8 +10,9 @@ deterministic processing with a local-first Ollama agent and an optional OpenAI
 Responses API agent.
 
 Today, the project reads Gmail metadata, parses supported academic email
-subjects, detects upcoming deadlines, and retrieves recent notices explicitly
-associated with a course code. It also discovers user-managed course directories
+subjects and narrowly supported announcement-body patterns, detects upcoming
+deadlines, and retrieves recent notices explicitly associated with a course code.
+It also discovers user-managed course directories
 and material files from an explicitly configured local filesystem root, with
 deterministic text extraction, chunking, and lexical retrieval for TXT and PDF
 files. The agent can select three narrow academic operations and generate a
@@ -67,12 +68,13 @@ modifying email:
 - `search_messages()` executes Gmail-native search queries and returns message
   metadata.
 - `get_message()` retrieves one message's metadata by Gmail message ID.
+- `get_plain_text_body()` explicitly retrieves decoded `text/plain` MIME content
+  for a selected message; malformed or unsupported body data is safely ignored.
 - `fetch_recent_messages()` returns the sender, subject, and date of up to ten
   recent messages.
 
 Returned metadata includes message and thread identifiers, selected headers,
-and Gmail's snippet preview. Decoded message bodies and attachments are not
-retrieved or parsed.
+and Gmail's snippet preview. Attachments and HTML-only bodies are not parsed.
 
 ### Academic notification parsing
 
@@ -85,6 +87,15 @@ Where a supported subject contains a valid date and time, the parser produces a
 normalized `datetime`. Invalid or unsupported date text does not interrupt
 batch processing.
 
+`academic_body_deadlines.py` conservatively recognizes explicit action-plus-
+deadline wording in Spanish and Valencian course announcements. It intentionally
+ignores vague scheduling language. Plain-text bodies are parsed locally and are
+never included in agent-facing results or sent to the model; only the detected
+title and due time cross that boundary. When a year is absent, the parser uses
+the message Date header and chooses the first matching future calendar date,
+including a deterministic year-boundary rollover. Multiple explicit actions
+sharing one deadline are returned as separate items.
+
 ### Course-prefixed notice parsing
 
 `course_notices.py` parses supported subjects whose prefix explicitly contains
@@ -94,10 +105,11 @@ inferring a course name or interpreting the meaning of the notice.
 
 ### Upcoming deadlines
 
-`find_upcoming_deadlines()` searches Gmail for candidate deadline messages,
-parses their subjects, and returns only recognized deadlines whose parsed time
-is strictly later than the caller-supplied `now`. Results retain Gmail message
-and thread identifiers and are ordered chronologically.
+`find_upcoming_deadlines()` combines supported structured subjects with
+conservatively parsed bodies from recognized course-prefixed announcements. It
+returns only deadlines whose parsed time is strictly later than the caller-
+supplied `now`. Results retain Gmail message and thread identifiers and are
+ordered chronologically.
 
 ### Recent course notices
 
@@ -656,6 +668,7 @@ access, OAuth credentials, API keys, tokens, or network access.
 │       ├── __init__.py
 │       ├── agent_tools.py
 │       ├── academic_operations.py
+│       ├── academic_body_deadlines.py
 │       ├── academic_notifications.py
 │       ├── course_notices.py
 │       ├── cli.py
@@ -680,6 +693,7 @@ access, OAuth credentials, API keys, tokens, or network access.
     ├── test_agent_grounding.py
     ├── test_agent_lexical_instruction.py
     ├── test_academic_operations.py
+    ├── test_academic_body_deadlines.py
     ├── test_academic_notifications.py
     ├── test_course_name_hygiene.py
     ├── test_course_notices.py
@@ -742,12 +756,14 @@ access, OAuth credentials, API keys, tokens, or network access.
   no default generation cap is applied.
 - No embeddings, vector database, semantic retrieval, or persistent RAG index
   is implemented. Generated explanations use only selected lexical passages.
-- Message bodies, MIME parts, and attachments are not processed.
+- Only plain-text bodies of recognized course-prefixed deadline candidates are
+  processed. HTML-only bodies, attachments, and vague free-form wording are not.
 - Deterministic source lists identify retrieved documents and PDF pages, but do
   not align individual generated claims with individual passages.
 - Automatic material routing is limited to documented explicit possessive cues.
 - Gmail result pagination is not implemented.
-- Deterministic parsers support only observed subject formats.
+- Deterministic parsers support only observed subject and narrow announcement-
+  body formats; they are intentionally not complete task synchronization.
 - Course-notice text is not semantically classified.
 - Parsed deadline timestamps currently contain no timezone information.
 

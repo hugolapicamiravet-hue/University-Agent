@@ -1,5 +1,6 @@
 """Isolated tests: no OAuth, credential files, or Gmail network access."""
 
+import base64
 import unittest
 from unittest.mock import Mock, call, patch
 
@@ -84,7 +85,63 @@ class GmailConnectorTests(unittest.TestCase):
         for message_id in ("", "   "):
             with self.subTest(message_id=message_id), self.assertRaises(ValueError):
                 connector.get_message(message_id)
+            with self.subTest(body_message_id=message_id), self.assertRaises(ValueError):
+                connector.get_plain_text_body(message_id)
         self.auth.assert_not_called()
+
+    def test_plain_text_body_is_decoded_from_nested_mime_parts(self):
+        encoded = base64.urlsafe_b64encode(
+            "Contenido académico ficticio con acentos.".encode()
+        ).decode().rstrip("=")
+        self.messages.get.return_value.execute.return_value = {
+            "payload": {
+                "mimeType": "multipart/alternative",
+                "parts": [
+                    {
+                        "mimeType": "text/plain",
+                        "headers": [
+                            {
+                                "name": "Content-Type",
+                                "value": "text/plain; charset=utf-8",
+                            }
+                        ],
+                        "body": {"data": encoded},
+                    },
+                    {
+                        "mimeType": "text/html",
+                        "body": {"data": "PGI-SFRNTDwvYj4="},
+                    },
+                ],
+            }
+        }
+
+        result = self.connector.get_plain_text_body("m1")
+
+        self.assertEqual(result, "Contenido académico ficticio con acentos.")
+        self.messages.get.assert_called_once_with(
+            userId="me", id="m1", format="full"
+        )
+        self.auth.assert_not_called()
+
+    def test_malformed_or_unsupported_body_is_safely_empty(self):
+        payloads = (
+            {},
+            {"mimeType": "text/plain", "body": None, "headers": None},
+            {"mimeType": "multipart/mixed", "parts": None},
+            {"mimeType": "text/html", "body": {"data": "PGI-SFRNTDwvYj4="}},
+            {"mimeType": "text/plain", "body": {"data": "%%%invalid%%%"}},
+            {
+                "mimeType": "text/plain",
+                "filename": "attachment.txt",
+                "body": {"data": "SGVsbG8="},
+            },
+        )
+        for payload in payloads:
+            with self.subTest(payload=payload):
+                self.messages.get.return_value.execute.return_value = {
+                    "payload": payload
+                }
+                self.assertEqual(self.connector.get_plain_text_body("m1"), "")
 
     def test_recent_messages_compatibility(self):
         self.messages.list.return_value.execute.return_value = {"messages": [{"id": "m1"}]}

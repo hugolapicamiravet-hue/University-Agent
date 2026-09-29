@@ -2,7 +2,10 @@
 
 from __future__ import annotations
 
+import base64
+import binascii
 import os
+import re
 from pathlib import Path
 from typing import Any, TypedDict
 
@@ -33,7 +36,7 @@ class GmailMessage(GmailMessageSummary):
 
 
 class GmailConnector:
-    """Authenticate with Gmail and read recent message headers."""
+    """Authenticate with Gmail and read messages without modifying them."""
 
     def __init__(
         self,
@@ -139,6 +142,26 @@ class GmailConnector:
             "snippet": details.get("snippet", ""),
         }
 
+    def get_plain_text_body(self, message_id: str) -> str:
+        """Return decoded ``text/plain`` content for one Gmail message.
+
+        Unsupported or malformed MIME body data yields an empty string. Gmail
+        API and authentication errors continue to propagate unchanged.
+        """
+        if not message_id.strip():
+            raise ValueError("message_id must not be empty")
+        if self._service is None:
+            self.authenticate()
+
+        details = (
+            self._service.users()
+            .messages()
+            .get(userId="me", id=message_id, format="full")
+            .execute()
+        )
+        payload = details.get("payload", {})
+        return _extract_plain_text(payload if isinstance(payload, dict) else {})
+
     def _save_token(self, credentials: Credentials) -> None:
         """Store OAuth tokens locally with owner-only file permissions."""
         self.token_path.parent.mkdir(parents=True, exist_ok=True)
@@ -150,3 +173,59 @@ class GmailConnector:
         os.fchmod(descriptor, 0o600)
         with os.fdopen(descriptor, "w", encoding="utf-8") as token_file:
             token_file.write(credentials.to_json())
+
+
+def _extract_plain_text(payload: dict[str, Any]) -> str:
+    texts: list[str] = []
+
+    def visit(part: dict[str, Any]) -> None:
+        if part.get("mimeType", "").casefold() == "text/plain" and not part.get(
+            "filename"
+        ):
+            body = part.get("body")
+            data = body.get("data") if isinstance(body, dict) else None
+            if isinstance(data, str):
+                headers = part.get("headers")
+                decoded = _decode_body_data(
+                    data,
+                    headers=headers if isinstance(headers, list) else [],
+                )
+                if decoded:
+                    texts.append(decoded)
+        parts = part.get("parts")
+        for child in parts if isinstance(parts, list) else []:
+            if isinstance(child, dict):
+                visit(child)
+
+    visit(payload)
+    return "\n".join(texts)
+
+
+def _decode_body_data(data: str, *, headers: list[dict[str, Any]]) -> str:
+    padding = "=" * (-len(data) % 4)
+    try:
+        raw = base64.b64decode(
+            data + padding,
+            altchars=b"-_",
+            validate=True,
+        )
+    except (ValueError, binascii.Error):
+        return ""
+
+    charset = "utf-8"
+    for header in headers:
+        if str(header.get("name", "")).casefold() != "content-type":
+            continue
+        match = re.search(
+            r"charset\s*=\s*[\"']?([^;\s\"']+)",
+            str(header.get("value", "")),
+            re.IGNORECASE,
+        )
+        if match:
+            charset = match.group(1)
+        break
+
+    try:
+        return raw.decode(charset)
+    except (LookupError, UnicodeDecodeError):
+        return ""

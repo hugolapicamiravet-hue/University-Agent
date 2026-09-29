@@ -2,7 +2,7 @@
 
 import unittest
 from datetime import datetime, timezone
-from unittest.mock import Mock
+from unittest.mock import Mock, call
 
 from university_agent.academic_notifications import NotificationCategory
 from university_agent.connectors.gmail import GmailConnector, GmailMessage
@@ -17,6 +17,7 @@ def gmail_message(
     subject: str,
     *,
     thread_id: str | None = None,
+    date: str = "",
 ) -> GmailMessage:
     return {
         "id": message_id,
@@ -24,7 +25,7 @@ def gmail_message(
         "sender": "fixture1@example.com",
         "recipients": "fixture3@example.com",
         "subject": subject,
-        "date": "",
+        "date": date,
         "snippet": "",
     }
 
@@ -52,9 +53,9 @@ class UpcomingDeadlinesTests(unittest.TestCase):
             max_results=37,
         )
 
-        self.connector.search_messages.assert_called_once_with(
-            'subject:"Venciment el"',
-            max_results=37,
+        self.assertEqual(
+            self.connector.search_messages.call_args_list,
+            [call('{subject:"Venciment el" subject:"2054-2055"}', max_results=37)],
         )
         self.assertEqual(len(results), 1)
         self.assertEqual(results[0].message_id, "m1")
@@ -75,9 +76,9 @@ class UpcomingDeadlinesTests(unittest.TestCase):
             find_upcoming_deadlines(self.connector, now=self.now),
             [],
         )
-        self.connector.search_messages.assert_called_once_with(
-            'subject:"Venciment el"',
-            max_results=100,
+        self.assertEqual(
+            self.connector.search_messages.call_args_list,
+            [call('{subject:"Venciment el" subject:"2054-2055"}', max_results=100)],
         )
 
     def test_past_deadline_is_excluded(self):
@@ -205,6 +206,92 @@ class UpcomingDeadlinesTests(unittest.TestCase):
 
         self.assertIs(caught.exception, error)
 
+    def test_course_notice_body_deadline_is_included_without_exposing_body(self):
+        body = (
+            "Tenéis que subir la práctica ficticia antes del jueves día 22 de "
+            "septiembre a las 18:00."
+        )
+        message = gmail_message(
+            "body-1",
+            "EI9001-MT9001-2054-2055: Actividad semanal",
+            date="Mon, 20 Sep 2054 09:00:00 +0200",
+        )
+        self.connector.search_messages.return_value = [message]
+        self.connector.get_plain_text_body.return_value = body
+
+        results = find_upcoming_deadlines(self.connector, now=self.now)
+
+        self.assertEqual(len(results), 1)
+        self.assertEqual(results[0].notification.title, "subir la práctica ficticia")
+        self.assertEqual(
+            results[0].notification.event_at,
+            datetime(2054, 9, 22, 18, 0),
+        )
+        self.assertEqual(results[0].notification.raw_subject, message["subject"])
+        self.assertNotIn(body, repr(results[0]))
+        self.connector.get_plain_text_body.assert_called_once_with("body-1")
+
+    def test_non_course_subject_body_is_not_read(self):
+        message = gmail_message(
+            "general",
+            "Aviso general 2054-2055",
+            date="Mon, 20 Sep 2054 09:00:00 +0200",
+        )
+        self.connector.search_messages.return_value = [message]
+
+        self.assertEqual(find_upcoming_deadlines(self.connector, now=self.now), [])
+        self.connector.get_plain_text_body.assert_not_called()
+
+    def test_multiple_body_actions_remain_deterministically_ordered(self):
+        message = gmail_message(
+            "body-actions",
+            "EI9001-2054-2055: Actividad semanal",
+            date="Mon, 20 Sep 2054 09:00:00 +0200",
+        )
+        self.connector.search_messages.return_value = [message]
+        self.connector.get_plain_text_body.return_value = (
+            "Tenéis que subir el informe y completar el formulario antes del "
+            "jueves día 22 de septiembre a las 18:00."
+        )
+
+        results = find_upcoming_deadlines(self.connector, now=self.now)
+
+        self.assertEqual(
+            [result.notification.title for result in results],
+            ["completar el formulario", "subir el informe"],
+        )
+
+    def test_matching_subject_deadline_suppresses_body_duplicate(self):
+        subject_message = gmail_message(
+            "subject-deadline",
+            deadline_subject(22, 18, "Entregar la práctica ficticia"),
+        )
+        body_message = gmail_message(
+            "body-deadline",
+            "EI9001-2054-2055: Actividad semanal",
+            date="Mon, 20 Sep 2054 09:00:00 +0200",
+        )
+        self.connector.search_messages.return_value = [subject_message, body_message]
+        self.connector.get_plain_text_body.return_value = (
+            "Entregar la práctica ficticia antes del jueves día 22 de "
+            "septiembre a las 18:00."
+        )
+
+        results = find_upcoming_deadlines(self.connector, now=self.now)
+
+        self.assertEqual([result.message_id for result in results], ["subject-deadline"])
+
+    def test_malformed_body_is_safely_ignored(self):
+        message = gmail_message(
+            "body-invalid",
+            "EI9001-2054-2055: Actividad semanal",
+            date="invalid date",
+        )
+        self.connector.search_messages.return_value = [message]
+        self.connector.get_plain_text_body.return_value = "not a supported deadline"
+
+        self.assertEqual(find_upcoming_deadlines(self.connector, now=self.now), [])
+
 
 class UpcomingDeadlinesUntilTests(unittest.TestCase):
     def setUp(self):
@@ -295,9 +382,9 @@ class UpcomingDeadlinesUntilTests(unittest.TestCase):
             max_results=37,
         )
 
-        self.connector.search_messages.assert_called_once_with(
-            "subject:\"Venciment el\"",
-            max_results=37,
+        self.assertEqual(
+            self.connector.search_messages.call_args_list,
+            [call('{subject:"Venciment el" subject:"2054-2055"}', max_results=37)],
         )
 
     def test_invalid_bounds_are_rejected_before_gmail_access(self):
