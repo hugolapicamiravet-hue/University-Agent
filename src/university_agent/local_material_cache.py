@@ -9,7 +9,7 @@ from university_agent.local_materials import LocalMaterial
 from university_agent.material_text import (
     ExtractedDocument,
     MaterialTextExtractionError,
-    _extract_discovered_text,
+    extract_discovered_text,
 )
 
 
@@ -41,14 +41,14 @@ class LocalMaterialCache:
         self._max_entries = max_entries
         self._entries: dict[Path, _CacheEntry] = {}
 
-    def _get_document(self, material: LocalMaterial) -> ExtractedDocument:
+    def get_document(self, material: LocalMaterial) -> ExtractedDocument:
         """Return one current extracted document, reusing it when unchanged."""
         identity, signature = _material_identity_and_signature(material)
         cached = self._entries.get(identity)
         if cached is not None and cached.signature == signature:
             return cached.document
 
-        document = _extract_discovered_text(material)
+        document = extract_discovered_text(material)
         if identity not in self._entries:
             self._evict_if_full()
         self._entries[identity] = _CacheEntry(

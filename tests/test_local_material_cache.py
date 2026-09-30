@@ -57,8 +57,8 @@ class LocalMaterialCacheTests(unittest.TestCase):
     def extraction_patch(self):
         return patch.object(
             local_material_cache,
-            "_extract_discovered_text",
-            wraps=local_material_cache._extract_discovered_text,
+            "extract_discovered_text",
+            wraps=local_material_cache.extract_discovered_text,
         )
 
     def test_first_search_extracts_and_repeated_search_reuses_document(self):

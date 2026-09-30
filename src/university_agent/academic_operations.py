@@ -6,9 +6,12 @@ from dataclasses import dataclass
 from datetime import datetime
 from typing import cast
 
+from university_agent.academic_knowledge import (
+    AcademicKnowledgeEngine,
+    MaterialPassage,
+)
 from university_agent.connectors.gmail import GmailConnector
 from university_agent.local_material_cache import LocalMaterialCache
-from university_agent.local_material_search import search_local_materials
 from university_agent.local_materials import LocalMaterialsSource
 from university_agent.recent_course_notices import find_recent_course_notices
 from university_agent.upcoming_deadlines import find_upcoming_deadlines_until
@@ -30,17 +33,6 @@ class CourseNoticeResult:
     academic_year: str
     text: str
     message_date: str
-
-
-@dataclass(frozen=True, slots=True)
-class MaterialPassage:
-    """One ranked local passage with citation-oriented relative provenance."""
-
-    course_name: str
-    relative_path: str
-    page_number: int | None
-    text: str
-    score: float
 
 
 def get_deadlines(
@@ -103,21 +95,9 @@ def search_materials(
     cache: LocalMaterialCache | None = None,
 ) -> list[MaterialPassage]:
     """Return narrowed lexical passages from supported local materials."""
-    results = search_local_materials(
+    engine = AcademicKnowledgeEngine(
         source,
-        query=query,
-        course_name=course_name,
-        limit=limit,
         max_chunk_chars=max_chunk_chars,
         cache=cache,
     )
-    return [
-        MaterialPassage(
-            course_name=result.chunk.course_name,
-            relative_path=result.chunk.relative_path.as_posix(),
-            page_number=result.chunk.page_number,
-            text=result.chunk.text,
-            score=result.score,
-        )
-        for result in results
-    ]
+    return engine.search(query, course=course_name, limit=limit)

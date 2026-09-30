@@ -42,11 +42,11 @@ def extract_text(
 ) -> ExtractedDocument:
     """Extract text from a material currently discoverable in ``source``."""
     discovered_material = _rediscover_material(source, material)
-    return _extract_discovered_text(discovered_material)
+    return extract_discovered_text(discovered_material)
 
 
-def _extract_discovered_text(material: LocalMaterial) -> ExtractedDocument:
-    """Extract a material returned directly by LocalMaterialsSource."""
+def extract_discovered_text(material: LocalMaterial) -> ExtractedDocument:
+    """Extract a material returned directly by ``LocalMaterialsSource``."""
     material_format = material.path.suffix.casefold()
 
     if material_format == ".txt":
