@@ -232,6 +232,20 @@ class LocalMaterialCacheTests(unittest.TestCase):
 
         self.assertEqual(extract.call_count, 3)
 
+    def test_default_capacity_reuses_corpus_slightly_larger_than_256(self):
+        for index in range(257):
+            self.create_text(
+                self.alpha,
+                f"note-{index:03d}.txt",
+                f"fictional term {index}",
+            )
+
+        with self.extraction_patch() as extract:
+            self.search("fictional")
+            self.search("term")
+
+        self.assertEqual(extract.call_count, 257)
+
     def test_invalid_entry_bounds_are_rejected(self):
         for value in (0, -1, True, False, 1.5, "2"):
             with self.subTest(value=value):

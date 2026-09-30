@@ -89,6 +89,7 @@ class AgentToolRuntime:
         max_lookback_days: int,
         max_material_results: int,
         max_chunk_chars: int,
+        material_cache: LocalMaterialCache | None = None,
     ) -> None:
         if max_gmail_results < 1 or max_gmail_results > 500:
             raise ValueError("max_gmail_results must be between 1 and 500")
@@ -107,7 +108,7 @@ class AgentToolRuntime:
         self._max_lookback_days = max_lookback_days
         self._max_material_results = max_material_results
         self._max_chunk_chars = max_chunk_chars
-        self._material_cache = LocalMaterialCache()
+        self._material_cache = material_cache or LocalMaterialCache()
 
     @property
     def definitions(self) -> list[dict[str, Any]]:

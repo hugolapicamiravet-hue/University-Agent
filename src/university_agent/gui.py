@@ -17,7 +17,12 @@ from ollama import Client as OllamaClient
 
 from university_agent.connectors.gmail import GmailConnector
 from university_agent.gui_config import GuiConfiguration
-from university_agent.local_agent import create_ollama_agent, select_ollama_model
+from university_agent.local_agent import (
+    create_ollama_agent,
+    select_ollama_model,
+    write_ollama_timing,
+)
+from university_agent.local_material_cache import LocalMaterialCache
 from university_agent.local_materials import LocalMaterialsSource
 from university_agent.ollama_agent import (
     OllamaUniversityAgent,
@@ -57,6 +62,7 @@ class GuiChatService:
             configuration.materials_root,
             excluded_relative_paths=configuration.excluded_relative_paths,
         )
+        self._material_cache = LocalMaterialCache()
         self._client = OllamaClient() if client is None else client
         self._connector = GmailConnector() if connector is None else connector
         self._agent_factory = agent_factory
@@ -89,6 +95,8 @@ class GuiChatService:
                 materials_source=self._materials_source,
                 timezone_name=self._configuration.timezone_name,
                 model_override=self._configuration.model_override,
+                material_cache=self._material_cache,
+                timing_callback=write_ollama_timing,
                 agent_factory=self._agent_factory,
             )
             answer = agent.run(query, now=self._now_provider(self._timezone))

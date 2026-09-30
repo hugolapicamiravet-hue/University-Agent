@@ -31,7 +31,7 @@ class _CacheEntry:
 class LocalMaterialCache:
     """Cache extracted documents with metadata-based invalidation."""
 
-    def __init__(self, *, max_entries: int = 256) -> None:
+    def __init__(self, *, max_entries: int = 512) -> None:
         if (
             isinstance(max_entries, bool)
             or not isinstance(max_entries, int)

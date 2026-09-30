@@ -103,6 +103,19 @@ class GuiChatServiceTests(unittest.TestCase):
             "fictional-model",
         )
 
+    def test_material_cache_is_reused_across_independent_messages(self):
+        self.service.submit("Busca en mis apuntes información ficticia")
+        first_cache = self.factory.call_args.kwargs["material_cache"]
+
+        self.service.submit("Busca en mis apuntes otro tema ficticio")
+        second_cache = self.factory.call_args.kwargs["material_cache"]
+
+        self.assertIs(first_cache, second_cache)
+        self.assertIs(
+            self.factory.call_args.kwargs["timing_callback"],
+            self.factory.call_args_list[0].kwargs["timing_callback"],
+        )
+
     def test_backend_error_is_safe_and_has_no_traceback(self):
         self.agent.error = RuntimeError("private backend detail")
 

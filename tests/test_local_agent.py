@@ -4,6 +4,7 @@ import unittest
 from unittest.mock import Mock
 
 from university_agent.local_agent import create_ollama_agent, select_ollama_model
+from university_agent.local_material_cache import LocalMaterialCache
 
 
 class LocalAgentConstructionTests(unittest.TestCase):
@@ -66,6 +67,25 @@ class LocalAgentConstructionTests(unittest.TestCase):
         )
 
         self.assertNotIn("num_predict", agent_factory.call_args.kwargs)
+
+    def test_optional_cache_and_timing_callback_are_forwarded(self):
+        agent_factory = Mock()
+        cache = LocalMaterialCache()
+        callback = Mock()
+
+        create_ollama_agent(
+            query="Fictional question",
+            client=Mock(),
+            connector=Mock(),
+            materials_source=Mock(),
+            timezone_name="Europe/Madrid",
+            material_cache=cache,
+            timing_callback=callback,
+            agent_factory=agent_factory,
+        )
+
+        self.assertIs(agent_factory.call_args.kwargs["material_cache"], cache)
+        self.assertIs(agent_factory.call_args.kwargs["timing_callback"], callback)
 
 
 if __name__ == "__main__":

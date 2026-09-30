@@ -151,7 +151,11 @@ class CliTests(unittest.TestCase):
 
         self.assertEqual(result, 0)
         connector.get_plain_text_body.assert_called_once_with("fictional-message")
-        output.assert_called_once_with("Tienes un cuestionario ficticio.")
+        output.assert_called_once_with(
+            "Plazos académicos detectados para esta semana:\n"
+            "- completar el cuestionario ficticio — 01/10/2026 08:00"
+        )
+        client.chat.assert_not_called()
 
     def test_gui_help_requires_no_configuration_or_external_service(self):
         with (

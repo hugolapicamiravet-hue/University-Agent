@@ -91,33 +91,45 @@ class OllamaUniversityAgentTests(unittest.TestCase):
         self.assertNotIn("options", request)
 
     @patch("university_agent.agent_tools.get_deadlines")
-    def test_verified_week_query_gets_deadlines_before_model_response(
+    def test_verified_week_query_returns_deadlines_without_model_response(
         self,
         get_deadlines,
     ):
         get_deadlines.return_value = [
             DeadlineResult("Fictional task", datetime(2054, 9, 25, 12, 0))
         ]
-        agent, client = self.make_agent(
-            [final_response("Tienes una entrega ficticia.")]
-        )
+        timing = Mock()
+        agent, client = self.make_agent([], timing_callback=timing)
 
         answer = agent.run("¿Qué tengo que hacer esta semana?", now=self.now)
 
-        self.assertEqual(answer, "Tienes una entrega ficticia.")
-        self.assertEqual(len(client.calls), 1)
         self.assertEqual(
-            self.tool_payload(client, "get_remaining_week_deadlines"),
-            {
-                "ok": True,
-                "results": [
-                    {
-                        "title": "Fictional task",
-                        "due_at": "2054-09-25T12:00:00",
-                    }
-                ],
-            },
+            answer,
+            "Plazos académicos detectados para esta semana:\n"
+            "- Fictional task — 25/09/2054 12:00",
         )
+        self.assertEqual(client.calls, [])
+        measured = timing.call_args.args[0]
+        self.assertEqual(measured.model, "qwen3:14b")
+        self.assertEqual(measured.model_rounds, 0)
+        self.assertEqual(measured.model_seconds, 0.0)
+        self.assertGreaterEqual(measured.gmail_seconds, 0.0)
+        self.assertEqual(measured.tool_seconds, measured.gmail_seconds)
+        self.assertEqual(measured.material_seconds, 0.0)
+        self.assertEqual(measured.response_chars, len(answer))
+        self.assertEqual(get_deadlines.call_count, 1)
+
+    @patch("university_agent.agent_tools.get_deadlines", return_value=[])
+    def test_verified_week_query_formats_empty_result_without_model(
+        self,
+        get_deadlines,
+    ):
+        agent, client = self.make_agent([])
+
+        answer = agent.run("¿Qué tengo que hacer esta semana?", now=self.now)
+
+        self.assertIn("No he detectado plazos", answer)
+        self.assertEqual(client.calls, [])
 
     def test_explicit_generation_budget_is_forwarded(self):
         agent, client = self.make_agent(
@@ -411,8 +423,10 @@ class OllamaUniversityAgentTests(unittest.TestCase):
         )
         search.return_value = [passage]
         query = "Busca en mis materiales información sobre caché"
+        timing = Mock()
         agent, client = self.make_agent(
-            [final_response("Respuesta sin cita del modelo.")]
+            [final_response("Respuesta sin cita del modelo.")],
+            timing_callback=timing,
         )
 
         answer = agent.run(query, now=self.now)
@@ -438,6 +452,13 @@ class OllamaUniversityAgentTests(unittest.TestCase):
             1,
         )
         self.assertNotIn(", p.", answer)
+        measured = timing.call_args.args[0]
+        self.assertEqual(measured.model_rounds, 1)
+        self.assertEqual(measured.gmail_seconds, 0.0)
+        self.assertEqual(measured.tool_seconds, measured.material_seconds)
+        self.assertGreaterEqual(measured.material_seconds, 0.0)
+        self.assertGreaterEqual(measured.model_seconds, 0.0)
+        self.assertEqual(measured.response_chars, len(answer))
 
     def test_spanish_query_is_preserved_exactly(self):
         query = "¿Dónde se explica memoria caché?"

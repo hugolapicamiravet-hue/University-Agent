@@ -3,8 +3,10 @@
 from __future__ import annotations
 
 import json
-from collections.abc import Mapping
+from collections.abc import Callable, Mapping
+from dataclasses import dataclass
 from datetime import datetime
+from time import perf_counter
 from typing import Any
 
 from university_agent.agent_tools import (
@@ -19,7 +21,22 @@ from university_agent.agent_tools import (
     required_remaining_week_deadline_arguments,
 )
 from university_agent.connectors.gmail import GmailConnector
+from university_agent.local_material_cache import LocalMaterialCache
 from university_agent.local_materials import LocalMaterialsSource
+
+
+@dataclass(frozen=True, slots=True)
+class OllamaRunTiming:
+    """Privacy-safe aggregate timing for one local-agent request."""
+
+    model: str
+    total_seconds: float
+    tool_seconds: float
+    gmail_seconds: float
+    material_seconds: float
+    model_seconds: float
+    model_rounds: int
+    response_chars: int
 
 
 class OllamaUniversityAgentError(RuntimeError):
@@ -55,6 +72,8 @@ class OllamaUniversityAgent:
         max_chunk_chars: int = 2000,
         max_tool_rounds: int = 4,
         num_predict: int | None = None,
+        material_cache: LocalMaterialCache | None = None,
+        timing_callback: Callable[[OllamaRunTiming], None] | None = None,
     ) -> None:
         if not model.strip():
             raise ValueError("model must not be blank")
@@ -71,6 +90,7 @@ class OllamaUniversityAgent:
         self._model = model
         self._max_tool_rounds = max_tool_rounds
         self._num_predict = num_predict
+        self._timing_callback = timing_callback
         self._runtime = AgentToolRuntime(
             connector=connector,
             materials_source=materials_source,
@@ -79,6 +99,7 @@ class OllamaUniversityAgent:
             max_lookback_days=max_lookback_days,
             max_material_results=max_material_results,
             max_chunk_chars=max_chunk_chars,
+            material_cache=material_cache,
         )
         self._tools = [
             {"type": "function", "function": definition}
@@ -98,38 +119,59 @@ class OllamaUniversityAgent:
         ]
         citations = []
         tool_rounds = 0
+        model_rounds = 0
+        model_seconds = 0.0
+        tool_times = {"gmail": 0.0, "materials": 0.0, "other": 0.0}
+        started = perf_counter()
+
+        def execute_runtime(
+            name: str,
+            arguments: dict[str, Any],
+        ) -> dict[str, Any]:
+            operation_started = perf_counter()
+            try:
+                return self._execute_runtime(name, arguments, now=now)
+            finally:
+                elapsed = perf_counter() - operation_started
+                if name in {
+                    "get_remaining_week_deadlines",
+                    "get_recent_course_notices",
+                }:
+                    tool_times["gmail"] += elapsed
+                elif name == "search_local_materials":
+                    tool_times["materials"] += elapsed
+                else:
+                    tool_times["other"] += elapsed
+
+        def finish(answer: str) -> str:
+            if self._timing_callback is not None:
+                self._timing_callback(
+                    OllamaRunTiming(
+                        model=self._model,
+                        total_seconds=perf_counter() - started,
+                        tool_seconds=sum(tool_times.values()),
+                        gmail_seconds=tool_times["gmail"],
+                        material_seconds=tool_times["materials"],
+                        model_seconds=model_seconds,
+                        model_rounds=model_rounds,
+                        response_chars=len(answer),
+                    )
+                )
+            return answer
 
         deadline_arguments = required_remaining_week_deadline_arguments(user_input)
         if deadline_arguments is not None:
-            deadline_payload = self._execute_runtime(
+            deadline_payload = execute_runtime(
                 "get_remaining_week_deadlines",
                 deadline_arguments,
-                now=now,
             )
-            messages.extend(
-                (
-                    {
-                        "role": "assistant",
-                        "content": "",
-                        "tool_calls": [
-                            {
-                                "function": {
-                                    "name": "get_remaining_week_deadlines",
-                                    "arguments": deadline_arguments,
-                                }
-                            }
-                        ],
-                    },
-                    _tool_message("get_remaining_week_deadlines", deadline_payload),
-                )
-            )
+            return finish(_format_remaining_week_deadlines(deadline_payload))
 
         required_arguments = required_material_search_arguments(user_input)
         if required_arguments is not None:
-            payload = self._execute_runtime(
+            payload = execute_runtime(
                 "search_local_materials",
                 required_arguments,
-                now=now,
             )
             citations.extend(material_citations_from_payload(payload))
             messages.extend(
@@ -151,7 +193,10 @@ class OllamaUniversityAgent:
             )
 
         while True:
+            model_started = perf_counter()
             response = self._chat(messages)
+            model_seconds += perf_counter() - model_started
+            model_rounds += 1
             message = _value(response, "message")
             if message is None:
                 raise OllamaUniversityAgentProviderError(
@@ -169,7 +214,7 @@ class OllamaUniversityAgent:
                     raise OllamaUniversityAgentProviderError(
                         "Ollama response did not contain final text"
                     )
-                return append_material_sources(content, citations)
+                return finish(append_material_sources(content, citations))
 
             if tool_rounds >= self._max_tool_rounds:
                 raise OllamaUniversityAgentRoundLimitError(
@@ -194,7 +239,7 @@ class OllamaUniversityAgent:
                     tool_name = name
                 else:
                     tool_name = name
-                    payload = self._execute_runtime(name, arguments, now=now)
+                    payload = execute_runtime(name, arguments)
 
                 if tool_name == "search_local_materials":
                     citations.extend(material_citations_from_payload(payload))
@@ -248,3 +293,20 @@ def _tool_message(
             payload, ensure_ascii=False, separators=(",", ":")
         ),
     }
+
+
+def _format_remaining_week_deadlines(payload: dict[str, Any]) -> str:
+    """Render the verified Spanish week query without another model pass."""
+    results = payload.get("results") if payload.get("ok") is True else None
+    if not isinstance(results, list) or not results:
+        return (
+            "No he detectado plazos académicos pendientes para lo que queda "
+            "de esta semana."
+        )
+
+    lines = ["Plazos académicos detectados para esta semana:"]
+    for result in results:
+        title = result["title"]
+        due_at = datetime.fromisoformat(result["due_at"])
+        lines.append(f"- {title} — {due_at:%d/%m/%Y %H:%M}")
+    return "\n".join(lines)
