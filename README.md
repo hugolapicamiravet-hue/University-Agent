@@ -96,6 +96,14 @@ Version `0.1.0` is an initial public MVP and does not promise a stable Python
 API. [Release notes](docs/releases/v0.1.0.md) describe its implemented scope and
 current limitations.
 
+## Reusable academic knowledge core
+
+The package now exposes `AcademicKnowledgeEngine` as a document-only public
+boundary. It supports material discovery and the existing TXT/PDF lexical
+retrieval workflow without requiring Gmail, Ollama, OpenAI, the CLI, or the GUI.
+See [the architectural boundary](docs/academic-knowledge-core.md) for the API,
+current guarantees, and deliberately deferred capabilities.
+
 ## Implemented functionality
 
 ### Read-only Gmail integration
